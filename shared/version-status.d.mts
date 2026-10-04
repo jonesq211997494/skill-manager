@@ -1,4 +1,4 @@
-export type VersionCode = 'current' | 'available' | 'local-changed' | 'both-changed' | 'unknown-source' | 'unchecked' | 'check-failed' | 'stale' | 'pinned' | 'mixed' | 'incomplete';
+export type VersionCode = 'current' | 'different' | 'available' | 'local-changed' | 'both-changed' | 'unknown-source' | 'unchecked' | 'check-failed' | 'stale' | 'pinned' | 'mixed' | 'incomplete';
 export type VersionState = {status:VersionCode;label:string;description:string;checkedAt:string|null;canCheck:boolean;deploymentId?:string;tool?:string;scope?:string;tools?:string[];scopes?:string[]};
 export type VersionSummary = VersionState & {states:VersionState[];checkedCount:number;totalCount:number};
 export const VERSION_STATUS_TTL_MS:number;
@@ -8,3 +8,5 @@ export function getSkillVersionStatus(skill:any,options?:{tool?:string;scope?:st
 export function versionStateMatches(item:VersionState,filters?:{tool?:string;scope?:string}):boolean;
 
 export function hasVersionSource(source:any):boolean;
+
+export function getVersionTargets(skill:any):any[];

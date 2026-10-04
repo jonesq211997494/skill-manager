@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react';
+import type { RunTask } from './api';
+import SourceBinding from './SourceBinding';
 import { ArrowDownToLine, ChevronRight, FileCode2, FileText, FolderOpen, Layers3, LockKeyhole, Pin, Star, Trash2, X } from 'lucide-react';
 import { Badge, bytes, Empty, IconButton, Loading, Markdown, Notice, PathLine, shortHash, ToolBadges } from './components';
 import { displayName, isHealthy, isReadonly, label, TOOL_NAMES, type Skill } from './types';
 
 export type Intent = {kind: 'install'|'import'|'remove'|'update'|'restore'; name?: string; skillIds?: string[]; sourcePath?: string; source?: any; deploymentId?: string; operationId?: string; force?: boolean; deployments?: any[]; targets?: any[]};
-type Props = {skill?: Skill; loading: boolean; busy: boolean; onClose: () => void; onError: (error: unknown) => void; onOrganize: (id: string, patch: any) => void; onIntent: (intent: Intent) => void};
+type Props = {skill?: Skill; loading: boolean; busy: boolean; onClose: () => void; onError: (error: unknown) => void; onOrganize: (id: string, patch: any) => void; onIntent: (intent: Intent) => void; onReload: () => Promise<void>; onLogin: () => void; run: RunTask};
 
-export default function Detail({skill, loading, busy, onClose, onError, onOrganize, onIntent}: Props) {
+export default function Detail({skill, loading, busy, onClose, onError, onOrganize, onIntent, onReload, onLogin, run}: Props) {
   const [tab, setTab] = useState('overview');
   const [alias, setAlias] = useState('');
   const [tags, setTags] = useState('');
@@ -24,6 +26,7 @@ export default function Detail({skill, loading, busy, onClose, onError, onOrgani
       {tab === 'overview' && <>
         {!!skill.issues?.length && <Notice tone="warning">{skill.issues.map((issue, i) => <div key={i}>{typeof issue === 'string' ? issue : issue.message || label(issue.code)}</div>)}</Notice>}
         <div className="detail-section"><div className="section-eyebrow">使用信息</div><dl className="metadata-list"><div><dt>关联工具</dt><dd><ToolBadges tools={skill.tools}/></dd></div><div><dt>配置状态</dt><dd>{label(skill.configState)}</dd></div><div><dt>版本标识</dt><dd><code>{String(skill.metadata?.version || shortHash(skill.hash))}</code></dd></div><div><dt>会话证据</dt><dd className="muted">无当前会话证据</dd></div></dl></div>
+        <SourceBinding key={skill.id} skill={skill} busy={busy} run={run} onReload={onReload} onLogin={onLogin}/>
         <div className="detail-section"><div className="section-eyebrow">我的整理</div><label className="field-label">中文别名<input value={alias} placeholder="添加一个容易记住的名字" onChange={e => setAlias(e.target.value)}/></label><label className="field-label">标签<input value={tags} placeholder="用逗号分隔，例如：科研，写作" onChange={e => setTags(e.target.value)}/></label><button className="button small-button" disabled={busy || (alias === (skill.alias || '') && tags === (skill.tags || []).join('，'))} onClick={() => onOrganize(skill.id, {alias: alias.trim(), tags: tags.split(/[,，]/).map(v => v.trim()).filter(Boolean)})}>保存整理</button></div>
         <div className="detail-section"><div className="section-eyebrow">使用说明</div><Markdown text={skill.body || skill.raw || '暂无可预览的正文。'}/></div>
         {skill.metadata && Object.keys(skill.metadata).some(key => !['name','description'].includes(key)) && <details className="metadata-details"><summary>依赖与扩展字段 <ChevronRight size={14}/></summary><pre>{JSON.stringify(Object.fromEntries(Object.entries(skill.metadata).filter(([key]) => !['name','description'].includes(key))), null, 2)}</pre><p className="muted small">声明来自技能文件，运行依赖尚未验证。</p></details>}

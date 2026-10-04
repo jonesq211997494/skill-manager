@@ -227,7 +227,7 @@ export class SourceService {
           this._ensure(context);
           this._checkCooldown(resource);
           const headers = { Accept: raw ? 'application/vnd.github.raw+json' : 'application/vnd.github+json',
-            'X-GitHub-Api-Version': '2022-11-28', 'User-Agent': 'SkillManager/0.1.1' };
+            'X-GitHub-Api-Version': '2022-11-28', 'User-Agent': 'SkillManager/0.2.0' };
           if (context.credential?.token) headers.Authorization = `Bearer ${context.credential.token}`;
           response = await this.fetch(requestUrl, { headers, signal: combined, redirect: 'manual' });
           this._ensure(context);

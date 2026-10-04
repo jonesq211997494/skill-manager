@@ -59,6 +59,7 @@ test('更新检查对同一仓库和分支只强制刷新一次',async t=>{
   const f=await setup(t);await f.manager.call('github.loginToken',{token:'fixture-token'});
   const repository={id:55,url:'https://github.com/test/skills',fullName:'test/skills'};
   for(let i=0;i<2;i++)f.manager.store.put('deployments',String(i),{id:String(i),targetPath:path.join(f.root,`missing-${i}`),source:{repositoryId:55,url:repository.url,ref:'main',subdir:`skill-${i}`}});
+  for(let i=0;i<2;i++)f.manager.store.put('skills',`skill-${i}`,{id:`skill-${i}`,name:`skill-${i}`,physicalPath:path.join(f.root,`missing-${i}`),aliases:[],tools:[],tracked:true,health:'normal'});
   let checks=0;const options=[];
   f.manager.sources.inspect=async(_url,opt)=>{checks++;options.push(opt);return {repository,skills:[],stale:false,commit:'a'.repeat(40),ref:'main'};};
   const result=await f.manager.call('updates.check');

@@ -41,12 +41,12 @@ async function assertAnchors(saved) {
     } catch(e) { if(e.code === 'PLAN_STALE') throw e; fail('PLAN_STALE', '计划中的父目录已不可访问。', {path:item.path}); }
   }
 }
-export async function fingerprint(dir) {
+export async function fingerprint(dir,manifestOptions={}) {
   if (!await exists(dir)) return {exists:false, hash:null};
   const stat = await fs.lstat(dir, {bigint:true});
   if (stat.isSymbolicLink()) return {exists:true, link:true, target:await fs.readlink(dir), identity:await dirIdentity(dir), hash:null};
   if (!stat.isDirectory()) return {exists:true, file:true, hash:null};
-  const manifest = await buildManifest(dir);
+  const manifest = await buildManifest(dir,manifestOptions);
   return {exists:true, hash:manifest.hash, complete:manifest.complete, identity:await dirIdentity(dir), manifest};
 }
 function equalFingerprint(a,b) {
@@ -103,7 +103,16 @@ export class OperationEngine {
       if (before.link || before.file) fail('TARGET_SHARED','目标是链接或非目录；请保留原位并选择独立安装位置。',{path:targetPath});
       if (before.exists && !before.complete) fail('INCOMPLETE_SCAN','目标目录无法完整核验，已阻止变更。');
       if (before.exists && await containsVcs(targetPath)) fail('TARGET_REPOSITORY','目标包含 Git 工作区，请先将技能与版本库分开管理；保留当前文件。');
-      const source = sourcePath ? await this.sourceManifest(sourcePath) : null;
+      let source = null;
+      if (sourcePath) {
+        try { source = await this.sourceManifest(sourcePath); }
+        catch (error) {
+          if (action === 'restore') fail('SNAPSHOT_CORRUPT','恢复快照无法完整核验，已保留当前文件，请先检查快照。');
+          throw error;
+        }
+      }
+      if (action === 'restore' && sourcePath && (!extra.restoreSnapshotHash || source.hash !== extra.restoreSnapshotHash || await containsVcs(sourcePath)))
+        fail('SNAPSHOT_CORRUPT','恢复快照与原操作保存的内容不一致，已阻止恢复。');
       const sourceAnchors = sourcePath ? await anchors(sourcePath) : [];
       const parentAnchors = await anchors(path.dirname(targetPath));
       const physicalTarget = await this.resolveFuture(targetPath);
@@ -151,7 +160,7 @@ export class OperationEngine {
             if(!intent.force) fail('LOCAL_MODIFIED','原操作之后目标已有改动；请另存当前内容后再恢复。',{path:step.targetPath});
           }
           if(step.before.exists && !step.snapshotPath) fail('RECOVERY_REQUIRED','原操作的恢复快照缺失。');
-          await add('restore',step.before.exists?step.snapshotPath:null,step.targetPath,{tool:step.tool,scope:step.scope,restoreDeployments:step.previousDeployments,restoresOperationId:op.id});
+          await add('restore',step.before.exists?step.snapshotPath:null,step.targetPath,{tool:step.tool,scope:step.scope,restoreDeployments:step.previousDeployments,restoresOperationId:op.id,restoresStepId:step.id,restoreSnapshotHash:step.before.exists?step.beforeHash:null});
         }
       } else fail('INVALID_OPERATION','不支持的操作类型。');
     } catch(e) { plan.blockers.push({code:e.code||'PLAN_ERROR',message:e.message,details:e.details||{}}); }
@@ -168,9 +177,25 @@ export class OperationEngine {
   async validateStep(step) {
     await this.assertWritable(step.targetPath); await assertAnchors(step.parentAnchors);
     if(!equalFingerprint(await fingerprint(step.targetPath),step.before)) fail('PLAN_STALE','目标内容或目录身份在预览后发生变化，请重新预览。',{path:step.targetPath});
+    // 包指纹排除 .git，因此每次切换前都必须单独复查新增的版本库资料。
+    if(step.before.exists && await containsVcs(step.targetPath)) fail('TARGET_REPOSITORY','目标在预览后包含 Git 工作区，已保留所有原文件，请重新处理。');
+    if(step.action==='restore') {
+      const operation=this.store.get('operations',step.restoresOperationId);
+      const original=operation?.steps.find(item=>item.id===step.restoresStepId);
+      const expected=original?.before.exists?original.beforeHash:null;
+      if(!original || original.targetPath!==step.targetPath || expected!==step.restoreSnapshotHash || expected!==step.afterHash || (original.before.exists?original.snapshotPath:null)!==step.sourcePath)
+        fail('PLAN_STALE','恢复计划与原操作记录不一致，请重新预览。');
+    }
     if(step.sourcePath) {
       await assertAnchors(step.sourceAnchors);
-      const source=await this.sourceManifest(step.sourcePath);
+      let source;
+      try { source=await this.sourceManifest(step.sourcePath); }
+      catch(error) {
+        if(step.action==='restore') fail('SNAPSHOT_CORRUPT','恢复快照无法完整核验，已保留当前文件，请先检查快照。');
+        throw error;
+      }
+      if(step.action==='restore' && (source.hash!==step.restoreSnapshotHash || await containsVcs(step.sourcePath)))
+        fail('SNAPSHOT_CORRUPT','恢复快照在预览后发生变化，已保留当前文件并阻止恢复。');
       if(source.hash!==step.afterHash) fail('PLAN_STALE','来源内容在预览后发生变化，请重新预览。');
     }
   }
@@ -253,7 +278,10 @@ export class OperationEngine {
     if(path.dirname(step.retiredPath)!==path.dirname(step.targetPath) || !path.basename(step.retiredPath).startsWith('.skill-manager-retired-')) return;
     await assertAnchors(step.parentAnchors);
     const current=await fingerprint(step.retiredPath);
-    if(current.hash===step.beforeHash && current.complete && !current.link) await fs.rm(step.retiredPath,{recursive:true});
+    if(current.hash===step.beforeHash && current.complete && !current.link) {
+      if(await containsVcs(step.retiredPath)) fail('TARGET_REPOSITORY','原目录现场新增了 Git 资料，已保留现场，未自动清理。');
+      await fs.rm(step.retiredPath,{recursive:true});
+    }
   }
   async recover() {
     const reports=[];

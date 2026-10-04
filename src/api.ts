@@ -1,4 +1,5 @@
-export type Progress = { message: string; current?: number; total?: number; kind?: string };
+export type RunTask = <T = any>(message: string, task: () => Promise<T>, options?: {retryable?: boolean; cancellable?: boolean}) => Promise<T | undefined>;
+export type Progress = { message: string; current?: number; total?: number; kind?: string; done?: boolean; cancelled?: boolean };
 
 declare global {
   interface Window {

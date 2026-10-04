@@ -25,7 +25,7 @@ export function Modal({title, subtitle, children, footer, onClose, wide = false}
     const previous = document.activeElement as HTMLElement;
     ref.current?.focus();
     const listener = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') closeRef.current();
+      if (event.key === 'Escape') {event.preventDefault();event.stopPropagation();closeRef.current();return;}
       if (event.key === 'Tab') {
         const controls = Array.from(ref.current?.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex="0"]') || []);
         const first = controls[0], last = controls[controls.length - 1];
@@ -45,6 +45,12 @@ export function Markdown({text}: {text: string}) {
 export function PathLine({path, onError, showOpen = true}: {path: string; onError: (error: unknown) => void; showOpen?: boolean}) {
   return <div className="path-line"><code title={path}>{path}</code><IconButton title="复制路径" onClick={() => {navigator.clipboard.writeText(path).catch(onError);}}><Copy size={13}/></IconButton>{showOpen && <IconButton title="打开目录" onClick={() => {call('files.open', {path}).catch(onError);}}><FolderOpen size={14}/></IconButton>}</div>;
 }
-export function bytes(value: number = 0): string {return value < 1024 ? `${value} B` : value < 1024 * 1024 ? `${(value / 1024).toFixed(1)} KB` : `${(value / 1024 / 1024).toFixed(1)} MB`;}
+export function bytes(value: number = 0): string {
+  if (value >= 1024 ** 4) return (value / 1024 ** 4).toFixed(1) + ' TB';
+  if (value >= 1024 ** 3) return (value / 1024 ** 3).toFixed(1) + ' GB';
+  if (value >= 1024 ** 2) return (value / 1024 ** 2).toFixed(1) + ' MB';
+  if (value >= 1024) return (value / 1024).toFixed(1) + ' KB';
+  return value + ' B';
+}
 export function shortHash(value?: string): string {return value ? value.slice(0, 12) : '暂无记录';}
 export function dateTime(value: any): string {if (!value) return '时间未知'; const date = new Date(value); return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString('zh-CN', {hour12: false});}

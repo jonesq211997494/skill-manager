@@ -33,7 +33,7 @@ function errorIssue(error, location) {
   return issue('PATH_UNREADABLE', '无法读取路径，请检查访问权限或文件占用', location, { systemCode: error.code ?? 'UNKNOWN' });
 }
 
-function parseSkill(raw, location) {
+export function parseSkill(raw, location) {
   const problems = [];
   let metadata = {};
   let body = raw;

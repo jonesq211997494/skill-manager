@@ -1,7 +1,7 @@
 {
   "name": "skill-manager-desktop",
   "productName": "Skill Manager",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "中文本地技能管理器：发现、安装、更新与恢复",
   "private": true,
   "type": "module",

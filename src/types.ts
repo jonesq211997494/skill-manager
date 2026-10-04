@@ -1,5 +1,5 @@
 export type ToolId = 'codex' | 'claude' | 'cursor';
-export type VersionStatusCode = 'current' | 'available' | 'local-changed' | 'both-changed' | 'unknown-source' | 'unchecked' | 'check-failed' | 'stale' | 'pinned' | 'mixed' | 'incomplete';
+export type VersionStatusCode = 'current' | 'available' | 'different' | 'local-changed' | 'both-changed' | 'unknown-source' | 'unchecked' | 'check-failed' | 'stale' | 'pinned' | 'mixed' | 'incomplete';
 export type VersionStatus = {status: VersionStatusCode; label: string; description: string; checkedAt: string | null; checkedCount: number; totalCount: number; canCheck: boolean; states?: VersionState[]};
 export type VersionState = {deploymentId?: string; tool?: ToolId; scope?: string; status: VersionStatusCode; label: string; description: string; checkedAt?: string | null; canCheck?: boolean; [key: string]: any};
 
@@ -11,7 +11,7 @@ export type Skill = {
   aliases?: {path: string; tools?: ToolId[]; scope?: string; kind?: string; link?: any}[];
   tools?: ToolId[]; management?: string; configState?: any; tags?: string[];
   favorite?: boolean; pinned?: boolean; hash?: string; manifest?: {files?: FileEntry[]; [key: string]: any};
-  deployments?: Deployment[]; source?: any; versionStatus?: VersionStatus; versionStates?: VersionState[]; [key: string]: any;
+  deployments?: Deployment[]; source?: any; sourceBinding?: {id: string; source: any; trackingOnly: true; linkedAt: string}; versionStatus?: VersionStatus; versionStates?: VersionState[]; [key: string]: any;
 };
 export type Root = {id: string; path: string; kind?: string; tools?: ToolId[]; scope?: string; status?: string; error?: string; [key: string]: any};
 export type GitHubRateLimit = {limit?: number; remaining?: number; reset?: string | number; retryAt?: string | number; cooldownUntil?: string | number};
@@ -26,7 +26,7 @@ export const STATUS_NAMES: Record<string, string> = {
   disabled: '停用', unsupported: '不支持', unconfigured: '未配置', external: '外部管理',
   managed: '已纳管', 'plugin-readonly': '插件只读', 'plugin-read-only': '插件只读', readonly: '只读',
   plugin: '插件只读', system: '系统只读', historical: '历史记录', current: '已是最新',
-  aligned: '内容已一致', available: '可更新', 'local-changed': '本地有改动', 'both-changed': '两端均有变化',
+  aligned: '内容已一致', available: '可更新', different: '与来源不同', 'local-changed': '本地有改动', 'both-changed': '两端均有变化',
   'source-unavailable': '来源不可用', succeeded: '已完成', completed: '已完成', success: '已完成',
   failed: '失败', partial: '部分完成', running: '执行中', pending: '等待中', restored: '已恢复',
   'recovery-required': '需要恢复', install: '安装', import: '纳管', remove: '移除', update: '更新', restore: '恢复',

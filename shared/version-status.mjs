@@ -1,7 +1,7 @@
 // 版本状态仅来自完整包比较证据；“文件正常”与“版本最新”分别表达。
 export const VERSION_STATUS_TTL_MS = 24 * 60 * 60 * 1000;
 const labels = {
-  current:'已是最新', available:'有更新', 'local-changed':'本地有修改', 'both-changed':'有更新 · 本地修改',
+  current:'已是最新', available:'有更新', different:'与来源不同', 'local-changed':'本地有修改', 'both-changed':'有更新 · 本地修改',
   'unknown-source':'来源未知', unchecked:'未检查', 'check-failed':'检查失败', stale:'待复查',
   pinned:'已固定版本', mixed:'部分状态未知', incomplete:'无法确认',
 };
@@ -20,12 +20,20 @@ function matches(item,{tool,scope}={}) {
   return (!tool||tool==='all'||(item.tools||[item.tool]).includes(tool)) && (!scope||scope==='all'||(item.scopes||[item.scope]).includes(scope));
 }
 
+export function getVersionTargets(skill) {
+  const deployments=skill.deployments||[];
+  if(!skill.sourceBinding)return deployments;
+  const binding=skill.sourceBinding;
+  return [...deployments.filter(d=>hasSource(d.source)),{...binding,targetPath:skill.physicalPath,physicalTarget:skill.physicalPath,tool:skill.tools?.[0]||'external',scope:skill.scope||'user',trackingOnly:true}];
+}
+
 export function buildVersionStates(skill,updates=[],{now=Date.now()}={}) {
   const aliases=skill.aliases||[];
   const tools=[...new Set([...(skill.tools||[]),...aliases.flatMap(a=>a.tools||[])])];
   const scopes=[...new Set(aliases.map(a=>a.scope).filter(Boolean))];
-  if(!skill.deployments?.length) return [state(skill.pinned?'pinned':'unknown-source',skill.pinned?'已固定当前版本；固定并不表示这是最新版本。':'该技能尚未关联可核验的在线安装来源，不能仅凭名称或文件正常判断版本。',{tools,scopes,checkedAt:null,canCheck:false})];
-  return skill.deployments.map(deployment=>{
+  const targets=getVersionTargets(skill);
+  if(!targets.length) return [state(skill.pinned?'pinned':'unknown-source',skill.pinned?'已固定当前版本；固定并不表示这是最新版本。':'该技能尚未关联可核验的在线安装来源，不能仅凭名称或文件正常判断版本。',{tools,scopes,checkedAt:null,canCheck:false})];
+  return targets.map(deployment=>{
     const physicalMatch=skill.physicalPath && [deployment.targetPath,deployment.physicalTarget].includes(skill.physicalPath);
     const relevantAliases=physicalMatch?aliases:aliases.filter(a=>[deployment.targetPath,deployment.physicalTarget].includes(a.path));
     const extra={deploymentId:deployment.id,tool:deployment.tool,scope:deployment.scope,
@@ -47,11 +55,12 @@ export function buildVersionStates(skill,updates=[],{now=Date.now()}={}) {
     if(observed&&update.localHash&&observed!==update.localHash)return state('stale','本地内容在上次检查后发生变化，请重新检查。',extra);
     const aligned=update.status==='aligned'&&update.localHash===update.remoteHash&&deployment.baselineHash===update.localHash;
     if(update.baselineHash!==deployment.baselineHash&&!aligned)return state('stale','安装基线已变化，旧检查结果不再适用。',extra);
-    if(['current','aligned','available','local-changed','both-changed'].includes(update.status) && (!observed||!update.localHash||!update.remoteHash))return state('incomplete','缺少当前本地文件或远端完整包指纹，请重新检查。',extra);
+    if(['current','aligned','available','local-changed','both-changed','different'].includes(update.status) && (!observed||!update.localHash||!update.remoteHash))return state('incomplete','缺少当前本地文件或远端完整包指纹，请重新检查。',extra);
     if(['current','aligned'].includes(update.status)) {
       if(!update.localHash||!update.remoteHash||update.localHash!==update.remoteHash)return state('incomplete','缺少可信的完整包一致性证据，不能显示为最新。',extra);
       return state('current',`完整技能包在 ${timeText(checkedAt)} 与远端一致；此结论以该次检查为准。`,extra);
     }
+    if(update.status==='different')return state('different',`在 ${timeText(checkedAt)} 检测到本地与来源不同；缺少可靠历史基线，不能区分旧版本与本地自定义修改。`,extra);
     if(update.status==='available')return state('available',`在 ${timeText(checkedAt)} 检测到远端更新，本地内容未偏离安装基线。`,extra);
     if(update.status==='both-changed')return state('both-changed',`在 ${timeText(checkedAt)} 检测到远端更新和本地修改，请查看差异后决定是否更新。`,extra);
     if(update.status==='local-changed')return state('local-changed',`在 ${timeText(checkedAt)} 未发现远端更新，但本地内容已修改。`,extra);
@@ -70,7 +79,7 @@ export function summarizeVersionStates(states=[],{pinned=false,now=Date.now()}={
   if(!normalized.length)return state('unknown-source','当前工具和范围没有可核验的在线来源。',extra);
   if(normalized.length===1)return {...normalized[0],...extra};
   let status;
-  for(const candidate of ['both-changed','available','check-failed','local-changed'])if(normalized.some(s=>s.status===candidate)){status=candidate;break;}
+  for(const candidate of ['both-changed','available','check-failed','local-changed','different'])if(normalized.some(s=>s.status===candidate)){status=candidate;break;}
   if(!status) {
     const unique=[...new Set(normalized.map(s=>s.status))];
     status=unique.length===1?unique[0]:normalized.some(s=>s.status==='incomplete')?'incomplete':normalized.some(s=>s.status==='stale')?'stale':normalized.some(s=>s.status==='unchecked')?'unchecked':'mixed';

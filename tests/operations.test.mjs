@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { Store } from '../core/store.mjs';
 import { OperationEngine, compareVersions, fingerprint } from '../core/operations.mjs';
 import { buildManifest } from '../core/scanner.mjs';
@@ -276,4 +278,129 @@ test('目标内出现 Git 资料时更新和移除均拒绝且完整保留资料
   assert.deepEqual(await fs.readFile(path.join(gitPath, 'index')), Buffer.from([0, 1, 2, 3]));
   assert.equal(await fs.readFile(path.join(deployment.targetPath, 'script.txt'), 'utf8'), '原始脚本');
   assert.equal(f.engine.deployments().length, 1);
+});
+
+
+// Git 操作仅作用于当前测试新建的临时目录，不读取账号或修改全局配置。
+const runGit = promisify(execFile);
+async function initRepository(location) {
+  await runGit('git', ['-C', location, 'init', '--quiet'], { windowsHide: true });
+  assert.equal(await exists(path.join(location, '.git', 'HEAD')), true);
+}
+
+for (const kind of ['update', 'remove']) {
+  test(`${kind === 'update' ? '更新' : '移除'}预览后初始化 Git 工作区时拒绝执行并保留全部原件`, async t => {
+    const f = await setup(t);
+    await install(f);
+    const deployment = f.engine.deployments()[0];
+    await fs.writeFile(path.join(f.source, 'script.txt'), '远端新内容');
+    const plan = await f.engine.plan({ kind, deploymentId: deployment.id, sourcePath: kind === 'update' ? f.source : undefined });
+    assert.deepEqual(plan.blockers, []);
+    await initRepository(deployment.targetPath);
+    const gitHead = await fs.readFile(path.join(deployment.targetPath, '.git', 'HEAD'), 'utf8');
+    await assert.rejects(f.engine.execute(plan.id, plan.digest), { code: 'TARGET_REPOSITORY' });
+    assert.equal(await fs.readFile(path.join(deployment.targetPath, '.git', 'HEAD'), 'utf8'), gitHead);
+    assert.equal(await fs.readFile(path.join(deployment.targetPath, 'script.txt'), 'utf8'), '原始脚本');
+    assert.equal(f.engine.deployments()[0].baselineHash, deployment.baselineHash);
+    assert.equal(f.store.get('operations', plan.id), null);
+  });
+
+  test(`${kind === 'update' ? '更新' : '移除'}复制期间新增 Git 工作区时最终切换复查仍会阻止替换`, async t => {
+    const f = await setup(t);
+    await install(f);
+    const deployment = f.engine.deployments()[0];
+    await fs.writeFile(path.join(f.source, 'script.txt'), '远端新内容');
+    const plan = await f.engine.plan({ kind, deploymentId: deployment.id, sourcePath: kind === 'update' ? f.source : undefined });
+    assert.deepEqual(plan.blockers, []);
+    const originalCopy = fs.cp;
+    let initialized = false;
+    t.mock.method(fs, 'cp', async (source, destination, options) => {
+      const result = await originalCopy(source, destination, options);
+      const trigger = kind === 'update' ? path.basename(destination).startsWith('.skill-manager-stage-') : path.basename(destination) === 'before';
+      if (trigger && !initialized) {
+        initialized = true;
+        await initRepository(deployment.targetPath);
+      }
+      return result;
+    });
+    const operation = await f.engine.execute(plan.id, plan.digest);
+    assert.equal(initialized, true);
+    assert.equal(operation.status, 'partial');
+    assert.equal(operation.steps[0].error.code, 'TARGET_REPOSITORY');
+    assert.equal(await exists(path.join(deployment.targetPath, '.git', 'HEAD')), true);
+    assert.equal(await fs.readFile(path.join(deployment.targetPath, 'script.txt'), 'utf8'), '原始脚本');
+    assert.equal(f.engine.deployments()[0].baselineHash, deployment.baselineHash);
+  });
+}
+
+async function updateWithSnapshot(f) {
+  await install(f);
+  const deployment = f.engine.deployments()[0];
+  await fs.writeFile(path.join(f.source, 'script.txt'), '更新后的有效内容');
+  const plan = await f.engine.plan({ kind: 'update', deploymentId: deployment.id, sourcePath: f.source });
+  assert.deepEqual(plan.blockers, []);
+  const operation = await f.engine.execute(plan.id, plan.digest);
+  assert.equal(operation.status, 'completed');
+  return { deployment, operation, snapshotPath: operation.steps[0].snapshotPath };
+}
+
+test('恢复快照在生成计划前已被修改时拒绝恢复并保留当前有效版本', async t => {
+  const f = await setup(t);
+  const { deployment, operation, snapshotPath } = await updateWithSnapshot(f);
+  await fs.writeFile(path.join(snapshotPath, 'script.txt'), '损坏的快照');
+  const plan = await f.engine.plan({ kind: 'restore', operationId: operation.id });
+  assert.equal(plan.blockers[0].code, 'SNAPSHOT_CORRUPT');
+  assert.equal(plan.steps.length, 0);
+  await assert.rejects(f.engine.execute(plan.id, plan.digest), { code: 'PLAN_BLOCKED' });
+  assert.equal(await fs.readFile(path.join(deployment.targetPath, 'script.txt'), 'utf8'), '更新后的有效内容');
+  assert.equal(await fs.readFile(path.join(snapshotPath, 'script.txt'), 'utf8'), '损坏的快照');
+});
+
+test('恢复快照在预览后被修改时执行核验拒绝且不写入错误内容', async t => {
+  const f = await setup(t);
+  const { deployment, operation, snapshotPath } = await updateWithSnapshot(f);
+  const plan = await f.engine.plan({ kind: 'restore', operationId: operation.id });
+  assert.deepEqual(plan.blockers, []);
+  assert.equal(plan.steps[0].restoreSnapshotHash, operation.steps[0].beforeHash);
+  assert.equal(plan.steps[0].restoresStepId, operation.steps[0].id);
+  await fs.writeFile(path.join(snapshotPath, 'script.txt'), '预览之后损坏的快照');
+  await assert.rejects(f.engine.execute(plan.id, plan.digest), { code: 'SNAPSHOT_CORRUPT' });
+  assert.equal(await fs.readFile(path.join(deployment.targetPath, 'script.txt'), 'utf8'), '更新后的有效内容');
+  assert.equal(f.engine.deployments()[0].baselineHash, operation.steps[0].afterHash);
+});
+
+test('恢复快照在暂存复制期间被修改时切换前再次核验并保留目标', async t => {
+  const f = await setup(t);
+  const { deployment, operation, snapshotPath } = await updateWithSnapshot(f);
+  const plan = await f.engine.plan({ kind: 'restore', operationId: operation.id });
+  const originalCopy = fs.cp;
+  let changed = false;
+  t.mock.method(fs, 'cp', async (source, destination, options) => {
+    const result = await originalCopy(source, destination, options);
+    if (source === snapshotPath && path.basename(destination).startsWith('.skill-manager-stage-')) {
+      changed = true;
+      await fs.writeFile(path.join(snapshotPath, 'script.txt'), '切换前损坏的快照');
+    }
+    return result;
+  });
+  const restored = await f.engine.execute(plan.id, plan.digest);
+  assert.equal(changed, true);
+  assert.equal(restored.status, 'partial');
+  assert.equal(restored.steps[0].error.code, 'SNAPSHOT_CORRUPT');
+  assert.equal(await fs.readFile(path.join(deployment.targetPath, 'script.txt'), 'utf8'), '更新后的有效内容');
+});
+
+test('旧目录现场在切换后新增 Git 资料时清理保留现场而不递归删除', async t => {
+  const f = await setup(t);
+  const installed = await install(f);
+  const targetPath = installed.steps[0].targetPath;
+  const retiredPath = path.join(path.dirname(targetPath), '.skill-manager-retired-git-test');
+  await fs.cp(targetPath, retiredPath, { recursive: true });
+  await initRepository(retiredPath);
+  const plan = await f.engine.plan({ kind: 'remove', deploymentId: f.engine.deployments()[0].id });
+  const step = { ...plan.steps[0], retiredPath };
+  await assert.rejects(f.engine.cleanupRetired(step), { code: 'TARGET_REPOSITORY' });
+  assert.equal(await exists(path.join(retiredPath, '.git', 'HEAD')), true);
+  assert.equal(await fs.readFile(path.join(retiredPath, 'script.txt'), 'utf8'), '原始脚本');
+  assert.equal(await fs.readFile(path.join(targetPath, 'script.txt'), 'utf8'), '原始脚本');
 });
