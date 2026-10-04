@@ -16,7 +16,10 @@ async function writeSkill(directory, revision = 1) {
 }
 
 async function fixture(t) {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'skill-manager-service-test-'));
+  // Windows 临时目录可能使用 8.3 短路径；夹具统一采用同一实体的真实路径。
+  const temporaryRoot = await fs.realpath(os.tmpdir());
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'skill-manager-service-test-')));
+  const rootIdentity = await fs.stat(root, { bigint: true });
   const home = path.join(root, 'home');
   const dataDir = path.join(root, 'app-data');
   const sourcePath = path.join(root, 'original', 'safe-skill');
@@ -38,6 +41,14 @@ async function fixture(t) {
     for (const [key, value] of Object.entries(previous)) {
       if (value === undefined) delete process.env[key]; else process.env[key] = value;
     }
+    // 清理前复核真实路径、临时目录边界及原始目录实体，拒绝跟随被替换的入口。
+    const resolved = await fs.realpath(root);
+    assert.equal(resolved, root);
+    assert.equal(path.dirname(resolved), temporaryRoot);
+    assert.ok(path.basename(root).startsWith('skill-manager-service-test-'));
+    const identity = await fs.stat(root, { bigint: true });
+    assert.equal(identity.dev, rootIdentity.dev);
+    assert.equal(identity.ino, rootIdentity.ino);
     await fs.rm(root, { recursive: true, force: true });
   });
   await manager.initialize();

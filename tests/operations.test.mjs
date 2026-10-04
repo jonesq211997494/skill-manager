@@ -15,7 +15,10 @@ async function putSkill(folder, contents = '原始脚本') {
   await fs.writeFile(path.join(folder, 'script.txt'), contents);
 }
 async function setup(t) {
-  const base = await fs.mkdtemp(path.join(os.tmpdir(), 'skill-manager-operation-'));
+  // Windows 临时目录可能使用 8.3 短路径；夹具统一采用同一实体的真实路径。
+  const temporaryRoot = await fs.realpath(os.tmpdir());
+  const base = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'skill-manager-operation-')));
+  const rootIdentity = await fs.stat(base, { bigint: true });
   const home = path.join(base, 'home');
   const dataDir = path.join(base, 'data');
   const source = path.join(base, 'source', 'example');
@@ -30,7 +33,11 @@ async function setup(t) {
     // 清理范围必须仍是本测试创建的独立临时目录，链接入口由 rm 自身移除。
     const resolved = await fs.realpath(base);
     assert.equal(resolved, path.resolve(base));
+    assert.equal(path.dirname(resolved), temporaryRoot);
     assert.ok(path.basename(base).startsWith('skill-manager-operation-'));
+    const identity = await fs.stat(base, { bigint: true });
+    assert.equal(identity.dev, rootIdentity.dev);
+    assert.equal(identity.ino, rootIdentity.ino);
     await fs.rm(base, { recursive: true, force: true });
   });
   return { base, home, dataDir, source, projects, store, engine, roots };
