@@ -1,0 +1,73 @@
+{
+  "name": "skill-manager-desktop",
+  "productName": "Skill Manager",
+  "version": "0.1.2",
+  "description": "中文本地技能管理器：发现、安装、更新与恢复",
+  "private": true,
+  "type": "module",
+  "main": "electron/main.mjs",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "tsc --noEmit && vite build",
+    "start": "node scripts/start.mjs",
+    "test": "node --test tests/*.test.mjs",
+    "test:desktop": "node scripts/smoke.mjs",
+    "package": "npm run build && node -e \"require('electron')\" && electron-builder --win portable nsis --config.electronDist=node_modules/electron/dist",
+    "package:dir": "npm run build && node -e \"require('electron')\" && electron-builder --win --dir --config.electronDist=node_modules/electron/dist"
+  },
+  "dependencies": {
+    "lucide-react": "^0.577.0",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
+    "smol-toml": "^1.4.2",
+    "yaml": "^2.8.2"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^5.1.4",
+    "electron": "44.5.1",
+    "electron-builder": "^26.8.1",
+    "playwright": "^1.58.2",
+    "typescript": "5.9.3",
+    "vite": "^7.3.1"
+  },
+  "build": {
+    "appId": "local.skillmanager.desktop",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "core/**/*",
+      "package.json",
+      "assets/**/*",
+      "shared/**/*"
+    ],
+    "asar": true,
+    "win": {
+      "target": [
+        "portable",
+        "nsis"
+      ],
+      "artifactName": "Skill-Manager-${version}-setup-${arch}.${ext}",
+      "signExecutable": false,
+      "icon": "assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "deleteAppDataOnUninstall": false,
+      "createDesktopShortcut": true
+    },
+    "portable": {
+      "artifactName": "Skill-Manager-${version}-portable.exe"
+    },
+    "compression": "normal"
+  },
+  "author": "Skillspace"
+}
