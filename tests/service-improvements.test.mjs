@@ -111,8 +111,10 @@ test('更新检查取消保留已经完成的检查，并保留尚未开始项�
     f.manager.store.put('deployments', id, { id, targetPath: skill.physicalPath, physicalTarget: skill.physicalPath, tool: 'codex', scope: 'user', source, baseline, baselineHash: baseline.hash });
     candidates.set(source.url, { source, remotePath, name: skill.name });
   }
-  const previousBeta = { id: 'deployment-beta', status: 'old-fixture-record', checkedAt: '2020-01-01T00:00:00.000Z' };
-  f.manager.store.put('updates', previousBeta.id, previousBeta);
+  // 检查顺序来自技能索引，不能假定不同平台的文件实体 ID 按名称排序。
+  const [first, second] = f.manager.skills().flatMap(skill => skill.deployments);
+  const previousSecond = { id: second.id, status: 'old-fixture-record', checkedAt: '2020-01-01T00:00:00.000Z' };
+  f.manager.store.put('updates', previousSecond.id, previousSecond);
   let inspections = 0;
   f.manager.sources = {
     inspect: async (url, { signal }) => {
@@ -132,8 +134,8 @@ test('更新检查取消保留已经完成的检查，并保留尚未开始项�
   };
   await assert.rejects(f.manager.call('updates.check'), { code: 'CANCELLED' });
   assert.equal((await cancellation).cancelled, true);
-  assert.equal(f.manager.store.get('updates', 'deployment-alpha').status, 'available');
-  assert.deepEqual(f.manager.store.get('updates', 'deployment-beta'), previousBeta);
+  assert.equal(f.manager.store.get('updates', first.id).status, 'available');
+  assert.deepEqual(f.manager.store.get('updates', second.id), previousSecond);
   assert.ok(inspections <= 2);
   assert.equal(f.manager.jobs.has('updates'), false);
 });
