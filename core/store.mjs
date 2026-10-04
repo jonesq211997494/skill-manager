@@ -1,16 +1,22 @@
 import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
+import { checkDatabaseVersion } from './db-version.mjs';
 
 // 数据库只保存本程序的索引和日志，不写旧管理器数据库。
 export class Store {
   constructor(dataDir) {
     mkdirSync(dataDir, {recursive: true});
-    this.db = new DatabaseSync(path.join(dataDir, 'index.sqlite'));
-    this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON;
-      CREATE TABLE IF NOT EXISTS records (collection TEXT NOT NULL, id TEXT NOT NULL, data TEXT NOT NULL, updated_at TEXT NOT NULL, PRIMARY KEY(collection,id));
-      CREATE TABLE IF NOT EXISTS schema_version (version INTEGER PRIMARY KEY);
-      INSERT OR IGNORE INTO schema_version VALUES (1);`);
+    const filename = path.join(dataDir, 'index.sqlite');
+    const existing = checkDatabaseVersion(filename);
+    this.db = new DatabaseSync(filename);
+    try {
+      this.db.exec('PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON;');
+      if (!existing) this.transaction(() => this.db.exec(`
+        CREATE TABLE records (collection TEXT NOT NULL, id TEXT NOT NULL, data TEXT NOT NULL, updated_at TEXT NOT NULL, PRIMARY KEY(collection,id));
+        CREATE TABLE schema_version (version INTEGER PRIMARY KEY);
+        INSERT INTO schema_version VALUES (1);`));
+    } catch (error) { this.db.close(); throw error; }
   }
   get(collection, id, fallback = null) {
     const row = this.db.prepare('SELECT data FROM records WHERE collection=? AND id=?').get(collection, id);

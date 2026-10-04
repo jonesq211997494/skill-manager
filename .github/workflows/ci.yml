@@ -16,7 +16,7 @@ concurrency:
 jobs:
   test-and-build:
     runs-on: windows-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -29,7 +29,17 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
-      - name: Core tests
-        run: npm test
+      - name: Core tests and machine report
+        run: npm run test:ci
       - name: TypeScript and UI build
         run: npm run build
+      - name: Isolated desktop regression
+        run: npm run test:desktop
+      - name: Renderer security and shutdown
+        run: npm run test:security
+      - name: Operation result UI regression
+        run: npm run test:results-ui
+      - name: Sanitize local evidence and record environment
+        if: always()
+        run: npm run test:evidence
+      # 产物上传需另行确认；本工作流不发布报告或截图附件。

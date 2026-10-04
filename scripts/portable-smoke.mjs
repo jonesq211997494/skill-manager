@@ -6,6 +6,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
+const pkg=JSON.parse(await fs.readFile(path.join(root,'package.json'),'utf8'));
+const artifactName=`Skill-Manager-${pkg.version}-portable.exe`;
 const runtime=path.join(root,'.runtime','portable-smoke');
 const home=path.join(runtime,'home');
 await fs.mkdir(home,{recursive:true});
@@ -15,7 +17,7 @@ const port=server.address().port;
 await new Promise(resolve=>server.close(resolve));
 const env={...process.env,SKILL_MANAGER_TEST:'1',SKILL_MANAGER_DATA_DIR:path.join(runtime,'data'),SKILL_MANAGER_HOME:home,CODEX_HOME:path.join(home,'.codex'),CLAUDE_CONFIG_DIR:path.join(home,'.claude')};
 delete env.ELECTRON_RUN_AS_NODE;
-const child=spawn(path.join(root,'release','Skill-Manager-0.2.0-portable.exe'),[`--remote-debugging-port=${port}`],{env,windowsHide:true,stdio:'ignore'});
+const child=spawn(path.join(root,'release',artifactName),[`--remote-debugging-port=${port}`],{env,windowsHide:true,stdio:'ignore'});
 let browser;
 try {
   const until=Date.now()+55000;let connected=false;
@@ -30,7 +32,7 @@ try {
   await page.getByRole('heading',{name:'我的技能',exact:true}).waitFor();
   const data=await page.evaluate(()=>window.manager.call('bootstrap'));
   if(data.skills.length!==0)throw new Error('便携测试未使用隔离的空环境。');
-  await fs.writeFile(path.join(root,'test-results','portable-smoke.json'),JSON.stringify({status:'passed',checkedAt:new Date().toISOString(),executable:'Skill-Manager-0.2.0-portable.exe',skills:data.skills.length},null,2));
+  await fs.writeFile(path.join(root,'test-results','portable-smoke.json'),JSON.stringify({status:'passed',checkedAt:new Date().toISOString(),executable:artifactName,skills:data.skills.length},null,2));
   console.log('最终便携 EXE 解包、启动和服务连接通过。');
   await page.evaluate(()=>window.close()).catch(()=>{});
 } finally {

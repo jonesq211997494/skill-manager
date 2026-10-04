@@ -60,7 +60,7 @@ function validateName(name) {
 // 所有实际文件变更统一经过持久化计划和前置条件核验。
 export class OperationEngine {
   constructor({store,dataDir,home,roots=()=>[],onProgress=()=>{}}) {
-    Object.assign(this,{store,dataDir,home,roots,onProgress}); this.queue = Promise.resolve();
+    Object.assign(this,{store,dataDir,home,roots,onProgress}); this.queue = Promise.resolve();this.pendingCount=0;
   }
   history() { return this.store.all('operations').sort((a,b)=>b.createdAt.localeCompare(a.createdAt)); }
   deployments() { return this.store.all('deployments'); }
@@ -171,9 +171,11 @@ export class OperationEngine {
     plan.digest=hashText(JSON.stringify(plan)); this.store.put('plans',plan.id,plan); return plan;
   }
   execute(planId,digest) {
-    const task=this.queue.then(()=>this.executeLocked(planId,digest));
+    this.pendingCount++;
+    const task=this.queue.then(()=>this.executeLocked(planId,digest)).finally(()=>{this.pendingCount--;});
     this.queue=task.catch(()=>{}); return task;
   }
+  async waitForIdle() {while(this.pendingCount)await this.queue;}
   async validateStep(step) {
     await this.assertWritable(step.targetPath); await assertAnchors(step.parentAnchors);
     if(!equalFingerprint(await fingerprint(step.targetPath),step.before)) fail('PLAN_STALE','目标内容或目录身份在预览后发生变化，请重新预览。',{path:step.targetPath});
