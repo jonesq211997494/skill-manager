@@ -8,6 +8,7 @@ import { Store } from '../core/store.mjs';
 import { buildManifest, scanRoots } from '../core/scanner.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const appVersion = JSON.parse(await fs.readFile(path.join(root,'package.json'),'utf8')).version;
 const runtime = path.join(root, '.runtime', 'improvements-ui-' + Date.now());
 const home = path.join(runtime, 'home');
 const dataDir = path.join(runtime, 'data');
@@ -103,7 +104,7 @@ try {
   const row = page.locator('.skill-row').filter({hasText:'local-binding'});
   assert.equal(await row.locator('.version-state-label').innerText(),'来源未知');
   await row.locator('.skill-main').click();
-  await page.getByRole('button',{name:'关联在线来源',exact:true}).click();
+  await page.getByRole('button',{name:'关联来源（只读跟踪）',exact:true}).click();
   let dialog = page.getByRole('dialog',{name:'关联在线来源 · local-binding',exact:true});
   await dialog.getByLabel('关联来源链接',{exact:true}).fill('https://github.com/' + fixture.fullName);
   await dialog.getByRole('button',{name:'查找技能',exact:true}).click();
@@ -154,7 +155,7 @@ try {
   dialog = page.getByRole('dialog',{name:'解除在线来源关联',exact:true});
   await dialog.getByRole('button',{name:'确认解除关联',exact:true}).click();
   await dialog.waitFor({state:'detached'});
-  await page.getByRole('button',{name:'关联在线来源',exact:true}).waitFor();
+  await page.getByRole('button',{name:'关联来源（只读跟踪）',exact:true}).waitFor();
   data = await bootstrap();
   assert.equal(data.skills[0].sourceBinding == null,true);
   assert.equal(data.updates.length,0);
@@ -191,8 +192,8 @@ try {
   const requests = await app.evaluate(() => globalThis.__improvementsMock.requests);
   assert.ok(requests.every(request => request.authenticated));
   assert.deepEqual(errors,[]);
-  await fs.writeFile(path.join(root,'test-results','improvements-ui-smoke.json'),JSON.stringify({status:'passed',version:'0.2.0',checkedAt:new Date().toISOString(),steps,requests,rendererErrors:errors,network:'全部为隔离 Electron 主进程模拟响应；仅使用测试假令牌与独立数据目录。'},null,2));
-  console.log('0.2.0 完善功能界面 ' + steps.length + ' 项验证通过。');
+  await fs.writeFile(path.join(root,'test-results','improvements-ui-smoke.json'),JSON.stringify({status:'passed',version:appVersion,checkedAt:new Date().toISOString(),steps,requests,rendererErrors:errors,network:'全部为隔离 Electron 主进程模拟响应；仅使用测试假令牌与独立数据目录。'},null,2));
+  console.log(appVersion + ' 完善功能界面 ' + steps.length + ' 项验证通过。');
 } catch(failure) {
   if(page) await page.screenshot({path:path.join(root,'test-results','improvements-ui-failure.png'),fullPage:true}).catch(() => {});
   await fs.writeFile(path.join(root,'test-results','improvements-ui-smoke.json'),JSON.stringify({status:'failed',checkedAt:new Date().toISOString(),steps,rendererErrors:errors,error:failure.message},null,2));

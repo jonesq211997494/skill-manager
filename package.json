@@ -1,7 +1,7 @@
 {
   "name": "skill-manager-desktop",
   "productName": "Skill Manager",
-  "version": "0.2.0",
+  "version": "0.2.2",
   "description": "中文本地技能管理器：发现、安装、更新与恢复",
   "private": true,
   "type": "module",
@@ -12,8 +12,17 @@
     "start": "node scripts/start.mjs",
     "test": "node --test tests/*.test.mjs",
     "test:desktop": "node scripts/smoke.mjs",
-    "package": "npm run build && node -e \"require('electron')\" && electron-builder --win portable nsis --config.electronDist=node_modules/electron/dist",
-    "package:dir": "npm run build && node -e \"require('electron')\" && electron-builder --win --dir --config.electronDist=node_modules/electron/dist"
+    "package": "npm run build && node -e \"require('electron')\" && electron-builder --win portable nsis --x64 --publish never --config.electronDist=node_modules/electron/dist && npm run package:checksums",
+    "package:dir": "npm run build && node -e \"require('electron')\" && electron-builder --win --dir --x64 --publish never --config.electronDist=node_modules/electron/dist",
+    "package:checksums": "node scripts/package-checksums.mjs",
+    "test:package": "node scripts/package-smoke.mjs && node scripts/portable-smoke.mjs && node scripts/package-checksums.mjs --verify",
+    "verify": "npm run test:ci && npm run build && npm run test:desktop && npm run test:security && npm run test:results-ui && npm run test:ui-state",
+    "package:verified": "npm run verify && npm run package && npm run test:package",
+    "test:ci": "node scripts/test-core.mjs",
+    "test:security": "node scripts/security-smoke.mjs",
+    "test:results-ui": "node scripts/smoke-operation-result.mjs",
+    "test:ui-state": "node scripts/ui-state-smoke.mjs",
+    "test:evidence": "node scripts/test-evidence.mjs"
   },
   "dependencies": {
     "lucide-react": "^0.577.0",
@@ -62,12 +71,15 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "deleteAppDataOnUninstall": false,
-      "createDesktopShortcut": true
+      "createDesktopShortcut": true,
+      "installerLanguages": ["zh_CN", "en_US"]
     },
     "portable": {
       "artifactName": "Skill-Manager-${version}-portable.exe"
     },
     "compression": "normal"
   },
-  "author": "Skillspace"
+  "author": "Skillspace",
+  "engines": {"node": ">=24.16.0 <25", "npm": ">=11 <12"},
+  "repository": {"type": "git", "url": "https://github.com/jonesq211997494/skill-manager.git"}
 }

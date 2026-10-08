@@ -17,6 +17,9 @@ export type Root = {id: string; path: string; kind?: string; tools?: ToolId[]; s
 export type GitHubRateLimit = {limit?: number; remaining?: number; reset?: string | number; retryAt?: string | number; cooldownUntil?: string | number};
 export type GitHubStatus = {authenticated: boolean; user: {login: string; name?: string; id: number; avatarUrl?: string; htmlUrl?: string} | null; storageAvailable: boolean; browserAvailable: boolean; method?: string; expiresAt?: string; error?: unknown; rateLimits?: {resources?: {core?: GitHubRateLimit; search?: GitHubRateLimit}; cooldownUntil?: string | number}};
 export type Bootstrap = {skills: Skill[]; roots: Root[]; settings: Record<string, any>; projects?: any[]; operations: any[]; adapters: any[]; updates?: any[]; sources: any[]; stats?: any; recovery?: any[]; github?: GitHubStatus};
+export type OperationRecord = {id: string; status: string; steps: any[]; [key: string]: any};
+export type RefreshResult = {metadataCompleted?: boolean; metadataSkipped?: {stepId: string; reason: string; message: string; path?: string}[]; status: 'completed' | 'failed' | 'skipped'; pending?: boolean; stage?: 'metadata' | 'scan' | 'record'; error?: {code?: string; message: string}; recordError?: {code?: string; message: string}; message?: string};
+export type OperationExecution = OperationRecord & {operation: OperationRecord; indexRefresh: RefreshResult; viewRefresh?: {status: 'completed' | 'failed'; error?: {code?: string; message: string}}};
 export type Plan = {id: string; summary: any; steps: any[]; blockers: any[]; warnings: any[]; digest: string};
 export const TOOL_NAMES: Record<string, string> = {codex: 'Codex', claude: 'Claude Code', cursor: 'Cursor'};
 export const STATUS_NAMES: Record<string, string> = {
@@ -24,12 +27,12 @@ export const STATUS_NAMES: Record<string, string> = {
   'broken-link': '链接断开', inaccessible: '读取受限', unreadable: '读取受限', invalid: '元数据异常',
   'metadata-error': '元数据异常', incomplete: '检查未完成', unknown: '未知', enabled: '启用',
   disabled: '停用', unsupported: '不支持', unconfigured: '未配置', external: '外部管理',
-  managed: '已纳管', 'plugin-readonly': '插件只读', 'plugin-read-only': '插件只读', readonly: '只读',
+  managed: '受管理安装', 'plugin-readonly': '插件只读', 'plugin-read-only': '插件只读', readonly: '只读',
   plugin: '插件只读', system: '系统只读', historical: '历史记录', current: '已是最新',
   aligned: '内容已一致', available: '可更新', different: '与来源不同', 'local-changed': '本地有改动', 'both-changed': '两端均有变化',
   'source-unavailable': '来源不可用', succeeded: '已完成', completed: '已完成', success: '已完成',
   failed: '失败', partial: '部分完成', running: '执行中', pending: '等待中', restored: '已恢复',
-  'recovery-required': '需要恢复', install: '安装', import: '纳管', remove: '移除', update: '更新', restore: '恢复',
+  'recovery-required': '需要恢复', install: '安装', import: '复制到集中库', remove: '移除', update: '更新', restore: '恢复',
   active: '工具目录', candidate: '候选库', backup: '备份目录', history: '历史目录', cache: '缓存',
   alias: '路径别名', identical: '完整包相同', 'same-name': '同名差异', 'same-content': '完整包相同',
   added: '新增', modified: '修改', deleted: '删除', unchanged: '未变', changed: '变化',

@@ -4,13 +4,14 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
-const runtime=path.join(root,'.runtime','desktop-smoke');
+await fs.mkdir(path.join(root,'.runtime'),{recursive:true});
+const runtime=await fs.mkdtemp(path.join(root,'.runtime','desktop-smoke-'));
 const home=path.join(runtime,'home');
 const fixture=path.join(home,'.agents','skills','research-notes');
 await fs.mkdir(fixture,{recursive:true});
 await fs.mkdir(path.join(root,'test-results'),{recursive:true});
 await fs.writeFile(path.join(fixture,'SKILL.md'),'---\nname: research-notes\ndescription: 整理论文阅读笔记与研究记录\n---\n# 文献笔记\n\n保留出处，整理研究问题、方法和发现。\n');
-const launchEnv={...process.env};delete launchEnv.ELECTRON_RUN_AS_NODE;
+const launchEnv={...process.env};delete launchEnv.ELECTRON_RUN_AS_NODE;delete launchEnv.SKILL_MANAGER_DEV_URL;
 const instance=await electron.launch({args:[path.join(root,'electron','main.mjs')],env:{...launchEnv,SKILL_MANAGER_TEST:'1',SKILL_MANAGER_DATA_DIR:path.join(runtime,'data'),SKILL_MANAGER_HOME:home,CODEX_HOME:path.join(home,'.codex'),CLAUDE_CONFIG_DIR:path.join(home,'.claude')},timeout:60000});
 const page=await instance.firstWindow();
 const errors=[];page.on('pageerror',error=>errors.push(error.message));

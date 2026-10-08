@@ -29,7 +29,7 @@ async function setup(t) {
 
 test('未登录时在线入口均不发匿名请求，本地扫描保持可用',async t=>{
   const f=await setup(t);
-  for(const [method,args] of [['sources.search',{query:'skills'}],['sources.inspect',{url:'https://github.com/owner/repo'}],['sources.preview',{candidate:{}}]]) {
+  for(const [method,args] of [['sources.search',{query:'skills'}],['sources.inspect',{url:'https://github.com/owner/repo'}],['sources.preview',{candidate:{path:'',commit:'a'.repeat(40),repository:{id:1,fullName:'owner/repo',url:'https://github.com/owner/repo'}}}]]) {
     await assert.rejects(f.manager.call(method,args),e=>e.code==='GITHUB_LOGIN_REQUIRED');
   }
   assert.deepEqual(await f.manager.call('updates.check'),[]);

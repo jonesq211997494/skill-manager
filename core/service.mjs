@@ -13,6 +13,10 @@ import { readRevisionFile } from './diff.mjs';
 import { SourceBindings, compareSourceContent } from './source-bindings.mjs';
 import { reconcileScan, detachRoots } from './indexing.mjs';
 import { inspectStorage } from './storage.mjs';
+import { resolveAllowedOpenPath } from './allowed-path.mjs';
+import { parseIpcArgs } from './ipc-contracts.mjs';
+import { ServiceLifecycle } from './lifecycle.mjs';
+import { executeWithRefresh, recordRegistrationRemoval } from './operation-result.mjs';
 import { buildVersionStates, getSkillVersionStatus, versionStateMatches, hasVersionSource, getVersionTargets } from '../shared/version-status.mjs';
 
 export class ManagerService {
@@ -33,15 +37,30 @@ export class ManagerService {
     this.jobs=new Map(); this.queryPromises=new Map();this.operationCount=0;this.protectedRoots=[];this.sequence=0;
     this.bindings=new SourceBindings({store:this.store,sources:{inspect:(...a)=>this.sources.inspect(...a),download:(...a)=>this.sources.download(...a)},dataDir,getSkill:id=>this.skills().find(s=>s.id===id),progress:e=>this.progress(e)});
     this.engine=new OperationEngine({store:this.store,dataDir,home,roots:()=>[...this.store.all('roots'),...this.protectedRoots],onProgress:e=>this.progress(e)});
+    this.lifecycle=new ServiceLifecycle({
+      cancel:()=>{
+        for(const controller of this.jobs.values())controller.abort();
+        const cancelled=this.auth?.cancelLogin?.();
+        this.sources.resetAuthState?.();
+        return cancelled;
+      },
+      drain:async()=>{
+        await Promise.allSettled([...this.queryPromises.values()]);
+        await this.engine.waitForIdle();
+      },
+      isIdle:()=>!this.queryPromises.size&&!this.engine.pendingCount,
+      close:()=>this.store.close()
+    });
   }
   progress(event) {this.onProgress({...event,sequence:++this.sequence});}
   cancelled(signal) {if(signal?.aborted)fail('CANCELLED','查询任务已取消，已完成的检查记录会保留。');}
   runQuery(kind,task) {
+    if(this.lifecycle.closing)return Promise.reject(Object.assign(new Error('应用正在关闭，无法开始新的查询。'),{code:'SERVICE_CLOSING'}));
     if(this.queryPromises.has(kind))return Promise.reject(Object.assign(new Error('同类查询正在进行，请完成或取消后再试。'),{code:'QUERY_BUSY'}));
     const controller=new AbortController();this.jobs.set(kind,controller);
     const promise=Promise.resolve().then(async()=>{
-      this.progress({kind,message:'正在准备查询…'});
-      try{return await task(controller.signal);}
+
+      try{this.cancelled(controller.signal);this.progress({kind,message:'正在准备查询…'});return await task(controller.signal);}
       finally{if(this.jobs.get(kind)===controller)this.jobs.delete(kind);this.queryPromises.delete(kind);}
     });
     this.queryPromises.set(kind,promise);return promise;
@@ -50,7 +69,8 @@ export class ManagerService {
     const records=detachRoots(this.store.all('skills'),this.store.all('roots'));
     this.store.transaction(()=>{for(const skill of records)this.store.put('skills',skill.id,skill);});
   }
-  async initialize() {
+  initialize() {return this.lifecycle.run(()=>this.performInitialize());}
+  async performInitialize() {
     // 系统与插件归属独立于扫描登记，移除扫描范围不会授予写权限。
     this.protectedRoots=(await discoverRoots({home:this.home,projects:[]})).filter(r=>r.readOnly||r.kind==='plugin');
     if(!this.store.get('settings','main')) this.store.put('settings','main',{theme:'light',fontSize:14,libraryPath:path.join(this.dataDir,'library'),proxy:'',backupDays:30,backupMinimum:3,backupLimitGB:5});
@@ -78,6 +98,7 @@ export class ManagerService {
   }
   async requireGitHub() {
     if(!await this.auth?.getCredential())fail('GITHUB_LOGIN_REQUIRED','请先登录 GitHub，再使用在线功能。');
+    if(this.lifecycle.closing)fail('SERVICE_CLOSING','应用正在关闭，无法开始新的查询。');
   }
   async bootstrap() {
     const skills=this.skills(); const projects=this.store.all('projects');
@@ -209,8 +230,9 @@ export class ManagerService {
     return JSON.stringify(current.source)===JSON.stringify(target.source)
       && (target.trackingOnly?current.linkedAt===target.linkedAt&&current.physicalPath===target.physicalPath:current.targetPath===target.targetPath&&current.baselineHash===target.baselineHash);
   }
-  async call(method,args={}) {
-    if(!args || typeof args!=='object') fail('INVALID_ARGUMENT','请求参数无效。');
+  call(method,args={}) {return this.lifecycle.run(()=>this.dispatch(method,args));}
+  async dispatch(method,args={}) {
+    args=parseIpcArgs(method,args);
     switch(method) {
       case 'bootstrap': return this.bootstrap();
       case 'github.status':return this.githubStatus();
@@ -267,7 +289,10 @@ export class ManagerService {
         const root={id:hashText(p).slice(0,20),path:p,kind:args.kind||'manual',tools:args.tools||[],scope:args.scope||'user',enabled:true};
         this.store.put('roots',root.id,root);return root;
       }
-      case 'roots.remove':this.store.delete('roots',args.id);this.detachIndex();return true;
+      case 'roots.remove': {
+        this.store.transaction(()=>{recordRegistrationRemoval(this,{id:args.id,path:this.store.get('roots',args.id)?.path});this.store.delete('roots',args.id);});
+        this.detachIndex();return true;
+      }
       case 'projects.add': {
         const p=await fs.realpath(args.path); if(!(await fs.stat(p)).isDirectory())fail('INVALID_PATH','请选择项目目录。');
         const project={id:hashText(p).slice(0,20),path:p,name:path.basename(p)};this.store.put('projects',project.id,project);
@@ -276,16 +301,19 @@ export class ManagerService {
       }
       case 'projects.remove': {
         const project=this.store.get('projects',args.id);if(!project)fail('NOT_FOUND','项目登记不存在。');
-        this.store.transaction(()=>{this.store.delete('projects',args.id);for(const root of this.store.all('roots'))if(root.scope===project.path)this.store.delete('roots',root.id);});
+        this.store.transaction(()=>{recordRegistrationRemoval(this,{scope:project.path,path:project.path});this.store.delete('projects',args.id);for(const root of this.store.all('roots'))if(root.scope===project.path)this.store.delete('roots',root.id);});
         this.detachIndex();return true;
       }
       case 'settings.save': {
-        const before=this.store.get('settings','main'), next={...before};
+        const before=this.store.get('settings','main');
+        let next={...before};
         for(const key of ['theme','fontSize','libraryPath','proxy','backupDays','backupMinimum','backupLimitGB'])if(args[key]!==undefined)next[key]=args[key];
-        next.fontSize=Math.max(12,Math.min(20,Number(next.fontSize)||14));
+        // 兼容旧库中曾保存的数字字符串；新请求已在入口严格验证。
+        for(const key of ['fontSize','backupDays','backupMinimum','backupLimitGB'])if(typeof next[key]==='string'&&next[key].trim())next[key]=Number(next[key]);
+        next=parseIpcArgs('settings.save',next);
         if(next.proxy && !/^(https?|socks5):\/\/[^\s@]+$/.test(next.proxy))fail('INVALID_PROXY','请输入不含凭据的 HTTP 或 SOCKS5 代理地址。');
         if(next.libraryPath) next.libraryPath=path.resolve(next.libraryPath);
-        for(const key of ['backupDays','backupMinimum','backupLimitGB'])if(!Number.isFinite(Number(next[key]))||Number(next[key])<=0)fail('INVALID_SETTINGS','备份偏好必须为正数。');
+
         await this.onSettings(next);this.store.put('settings','main',next);return next;
       }
       case 'sources.add': {
@@ -305,19 +333,9 @@ export class ManagerService {
       case 'updates.check':return this.checkUpdates(args);
       case 'operations.plan':return this.engine.plan(args);
       case 'operations.execute': {
-        this.operationCount++;try {
-        const result=await this.engine.execute(args.planId,args.digest);
-        for(const step of result.steps.filter(s=>s.status==='completed')) {
-          const p=step.tool==='library'?this.store.get('settings','main').libraryPath:path.dirname(step.targetPath);
-          const id=hashText(p).slice(0,20);this.store.put('roots',id,{id,path:p,kind:step.tool==='library'?'library':'active',tools:step.tools,scope:step.scope,enabled:true});
-        }
-        for(const step of result.steps.filter(s=>s.status==='completed')) {
-          for(const update of this.store.all('updates'))if(update.targetPath===step.targetPath)this.store.put('updates',update.id,{...update,needsRecheck:true});
-        }
-        const pendingScan=this.queryPromises.get('scan');if(pendingScan)await pendingScan.catch(()=>{});
-        await this.scan();return result;
-        }finally{this.operationCount--;}
+        this.operationCount++;try {return await executeWithRefresh(this,args);}finally{this.operationCount--;}
       }
+      case 'operations.refresh':return executeWithRefresh(this,args,true);
       case 'operations.history':return this.engine.history();
       case 'operations.status':return this.store.get('operations',args.id);
       case 'migration.preview': {
@@ -349,9 +367,7 @@ export class ManagerService {
         return {path:relativePath,baseline,local,remote};
       }
       case 'files.open': {
-        const p=path.resolve(args.path);const stat=await fs.stat(p);
-        if(!stat.isDirectory() && path.extname(p).toLowerCase()!=='.md')fail('INVALID_PATH','只允许打开目录和 Markdown 文件。');
-        if(![...this.store.all('roots').map(r=>r.path),this.dataDir].some(root=>inside(root,p)))fail('INVALID_PATH','路径不在已登记目录中。');
+        const p=await resolveAllowedOpenPath(args.path,[...this.store.all('roots').map(r=>r.path),this.dataDir]);
         return this.openPath?.(p);
       }
       case 'links.open': {
@@ -360,5 +376,6 @@ export class ManagerService {
       default:fail('UNKNOWN_METHOD','此操作不可用。');
     }
   }
-  close() {for(const controller of this.jobs.values())controller.abort();this.auth?.cancelLogin?.();this.sources.resetAuthState?.();this.store.close();}
+  shutdown() {return this.lifecycle.shutdown();}
+  close() {return this.lifecycle.close();}
 }
