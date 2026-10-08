@@ -39,6 +39,12 @@ jobs:
         run: npm run test:security
       - name: Operation result UI regression
         run: npm run test:results-ui
+      - name: Detail and scan state regression
+        run: npm run test:ui-state
+      - name: Build Windows installer and portable app
+        run: npm run package
+      - name: Verify packaged app and checksums
+        run: npm run test:package
       - name: Sanitize local evidence and record environment
         if: always()
         run: npm run test:evidence

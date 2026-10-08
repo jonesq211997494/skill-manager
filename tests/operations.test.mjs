@@ -404,3 +404,38 @@ test('旧目录现场在切换后新增 Git 资料时清理保留现场而不递
   assert.equal(await fs.readFile(path.join(retiredPath, 'script.txt'), 'utf8'), '原始脚本');
   assert.equal(await fs.readFile(path.join(targetPath, 'script.txt'), 'utf8'), '原始脚本');
 });
+
+for (const ownership of ['root', 'skill']) {
+  for (const kind of ['remove', 'update']) {
+    test(`${ownership === 'root' ? '只读扫描根' : '只读技能'}位于安装内部时，${kind === 'remove' ? '移除' : '更新'}必须保护整个子目录`, async t => {
+      const f = await setup(t);
+      await putSkill(path.join(f.source, 'system-owned'), '系统拥有的文件');
+      await install(f);
+      const deployment = f.engine.deployments()[0];
+      const protectedPath = path.join(deployment.targetPath, 'system-owned');
+      if (ownership === 'root') f.roots.push({ path: protectedPath, kind: 'plugin', readOnly: true });
+      else f.store.put('skills', 'nested-system-skill', { id: 'nested-system-skill', physicalPath: protectedPath, management: 'readonly' });
+      await fs.writeFile(path.join(f.source, 'script.txt'), '准备更新的文件');
+      const plan = await f.engine.plan({ kind, deploymentId: deployment.id, sourcePath: kind === 'update' ? f.source : undefined });
+      assert.equal(plan.blockers[0]?.code, 'READ_ONLY_OWNER');
+      assert.equal(plan.steps.length, 0);
+      await assert.rejects(f.engine.execute(plan.id, plan.digest), { code: 'PLAN_BLOCKED' });
+      assert.equal(await fs.readFile(path.join(protectedPath, 'script.txt'), 'utf8'), '系统拥有的文件');
+      assert.equal(await fs.readFile(path.join(deployment.targetPath, 'script.txt'), 'utf8'), '原始脚本');
+    });
+  }
+}
+
+test('预览后新增只读子目录归属，执行前复查阻止父安装目录变更', async t => {
+  const f = await setup(t);
+  await putSkill(path.join(f.source, 'system-owned'), '系统拥有的文件');
+  await install(f);
+  const deployment = f.engine.deployments()[0];
+  const plan = await f.engine.plan({ kind: 'remove', deploymentId: deployment.id });
+  assert.deepEqual(plan.blockers, []);
+  const protectedPath = path.join(deployment.targetPath, 'system-owned');
+  f.roots.push({ path: protectedPath, kind: 'plugin', readOnly: true });
+  await assert.rejects(f.engine.execute(plan.id, plan.digest), { code: 'READ_ONLY_OWNER' });
+  assert.equal(f.store.get('operations', plan.id), null);
+  assert.equal(await fs.readFile(path.join(protectedPath, 'script.txt'), 'utf8'), '系统拥有的文件');
+});

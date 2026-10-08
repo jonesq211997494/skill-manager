@@ -3,24 +3,37 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
-import { extractFile } from '@electron/asar';
+import { extractFile, listPackage } from '@electron/asar';
 
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const exe=path.join(root,'release','win-unpacked','Skill Manager.exe');
 const pkg=JSON.parse(await fs.readFile(path.join(root,'package.json'),'utf8'));
-const runtime=path.join(root,'.runtime','package-smoke');
+await fs.mkdir(path.join(root,'.runtime'),{recursive:true});
+await fs.mkdir(path.join(root,'test-results'),{recursive:true});
+const runtime=await fs.mkdtemp(path.join(root,'.runtime','package-smoke-'));
 const home=path.join(runtime,'home');
 const skill=path.join(home,'.agents','skills','package-check');
 await fs.mkdir(skill,{recursive:true});
 await fs.writeFile(path.join(skill,'SKILL.md'),'---\nname: package-check\ndescription: 验证桌面交付包\n---\n# 安装包测试\n');
 const hash=bytes=>createHash('sha256').update(bytes).digest('hex');
 const verified=[];
-for(const relative of ['dist/index.html','shared/version-status.mjs','core/service.mjs','core/ipc-contracts.mjs','core/lifecycle.mjs','core/operation-result.mjs','core/allowed-path.mjs','core/db-version.mjs','shared/operation-result.mjs','electron/security.mjs','core/source-bindings.mjs','core/indexing.mjs','core/storage.mjs','core/operations.mjs','core/sources.mjs','core/github-auth.mjs','electron/preload.cjs','electron/main.mjs','assets/icon.png']) {
-  if(hash(extractFile(path.join(root,'release','win-unpacked','resources','app.asar'),relative))!==hash(await fs.readFile(path.join(root,relative))))throw new Error(`交付包与源码不一致：${relative}`);
-  verified.push(relative);
+const archive=path.join(root,'release','win-unpacked','resources','app.asar');
+// 核验全部第一方文件，包含 Vite 生成的带哈希 JS/CSS，避免只核验入口而漏掉旧界面。
+for(const directory of ['dist','shared','core','electron','assets']) {
+  for(const entry of await fs.readdir(path.join(root,directory),{recursive:true,withFileTypes:true})) {
+    if(!entry.isFile())continue;
+    const relative=path.relative(root,path.join(entry.parentPath,entry.name)).replaceAll('\\','/');
+    if(hash(extractFile(archive,path.normalize(relative)))!==hash(await fs.readFile(path.join(root,relative))))throw new Error(`交付包与源码不一致：${relative}`);
+    verified.push(relative);
+  }
+}
+for(const entry of listPackage(archive)) {
+  const relative=entry.replaceAll('\\','/').replace(/^\//,'');
+  const top=relative.split('/')[0];
+  if(['.runtime','test-results','credentials','.env','.git','tests'].includes(top))throw new Error(`交付包混入开发或运行数据：${relative}`);
 }
 const env={...process.env,SKILL_MANAGER_TEST:'1',SKILL_MANAGER_DATA_DIR:path.join(runtime,'data'),SKILL_MANAGER_HOME:home,CODEX_HOME:path.join(home,'.codex'),CLAUDE_CONFIG_DIR:path.join(home,'.claude')};
-delete env.ELECTRON_RUN_AS_NODE;
+delete env.ELECTRON_RUN_AS_NODE;delete env.SKILL_MANAGER_DEV_URL;
 const instance=await electron.launch({executablePath:exe,args:[],env,timeout:60000});
 const errors=[];
 try {

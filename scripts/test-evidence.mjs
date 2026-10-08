@@ -12,7 +12,7 @@ const git=(...args)=>execFileSync('git',args,{cwd:root,encoding:'utf8',windowsHi
 const report={appVersion:pkg.version,commit:git('rev-parse','HEAD'),worktreeModified:!!git('status','--porcelain'),node:process.version,platform:process.platform,arch:process.arch,checkedAt:new Date().toISOString(),workflowRun:process.env.GITHUB_RUN_ID||null,results:[]};
 // 只处理已知隔离测试报告，路径替换同时覆盖 JSON 转义和 URL 编码形式。
 const privatePaths=[[root,'[workspace]'],[os.tmpdir(),'[temporary]'],[os.homedir(),'[home]']];
-for(const name of ['core-tests.xml','desktop-smoke.json','security-smoke.json','operation-result-ui.json','ui-flow.json','improvements-ui-smoke.json','package-smoke.json']) {
+for(const name of ['core-tests.xml','desktop-smoke.json','security-smoke.json','operation-result-ui.json','ui-flow.json','improvements-ui-smoke.json','ui-state-smoke.json','package-smoke.json','portable-smoke.json']) {
   const filename=path.join(directory,name);
   let content;
   try {content=await fs.readFile(filename,'utf8');} catch(error) {if(error.code==='ENOENT')continue;throw error;}

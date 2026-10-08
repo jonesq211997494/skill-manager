@@ -77,10 +77,11 @@ export class OperationEngine {
     for (const root of this.roots()) {
       if (!(root.readOnly || root.kind === 'plugin')) continue;
       const real = await fs.realpath(root.path).catch(()=>path.resolve(root.path));
-      if (inside(real,actual)) fail('READ_ONLY_OWNER','系统或插件拥有此目录，只允许查看。',{path:targetPath});
+      // 整包替换或移除也会影响子目录，归属保护必须覆盖两个包含方向。
+      if (inside(real,actual) || inside(actual,real)) fail('READ_ONLY_OWNER','此目录或其子目录由系统或插件拥有，只允许查看。',{path:targetPath});
     }
-    const found = this.store.all('skills').find(s => s.management === 'readonly' && inside(s.physicalPath,actual));
-    if (found) fail('READ_ONLY_OWNER','此技能由插件或系统管理，只允许查看。');
+    const found = this.store.all('skills').find(s => s.management === 'readonly' && (inside(s.physicalPath,actual) || inside(actual,s.physicalPath)));
+    if (found) fail('READ_ONLY_OWNER','此技能或其子目录由插件或系统管理，只允许查看。');
   }
   async resolveFuture(p) {
     let current = path.resolve(p); const tail=[];

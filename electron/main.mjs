@@ -10,10 +10,18 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const dataDir = process.env.SKILL_MANAGER_DATA_DIR || path.join(app.getPath('appData'),'SkillManagerDesktop');
 app.setPath('userData',dataDir);
 app.setName('Skill Manager');
+if(process.platform==='win32')app.setAppUserModelId('local.skillmanager.desktop');
 let window, manager, startup, shutdownPromise, shutdownComplete = false;
 if(!app.requestSingleInstanceLock()) app.quit();
 else {
-  app.on('second-instance',()=>{window?.show();window?.focus();});
+  app.on('second-instance',()=>{
+    // 等待初始化完成，避免连续双击时展示尚未加载的窗口。
+    void startup?.then(()=>{
+      if(shutdownPromise || !window || window.isDestroyed())return;
+      if(window.isMinimized())window.restore();
+      window.show();window.focus();
+    });
+  });
   startup=app.whenReady().then(async()=>{
     const entry=path.resolve(here,'../dist/index.html');
     const devUrl=app.isPackaged?undefined:process.env.SKILL_MANAGER_DEV_URL;
@@ -21,7 +29,8 @@ else {
     if(devUrl && !/^http:\/\/127\.0\.0\.1:5173\/?$/.test(devUrl))throw new Error('仅允许本机开发地址。');
     session.defaultSession.setPermissionRequestHandler((_contents,_permission,callback)=>callback(false));
     session.defaultSession.setPermissionCheckHandler(()=>false);
-    window=new BrowserWindow({width:1440,height:920,minWidth:860,minHeight:620,show:!process.env.SKILL_MANAGER_TEST,backgroundColor:'#f6f5f2',autoHideMenuBar:true,icon:path.join(here,'../assets/icon.png'),title:'Skill Manager · 技能管理器',webPreferences:{preload:path.join(here,'preload.cjs'),nodeIntegration:false,contextIsolation:true,sandbox:true,webSecurity:true}});
+    window=new BrowserWindow({width:1440,height:920,minWidth:860,minHeight:620,show:false,backgroundColor:'#f6f5f2',autoHideMenuBar:true,icon:path.join(here,'../assets/icon.png'),title:'Skill Manager · 技能管理器',webPreferences:{preload:path.join(here,'preload.cjs'),nodeIntegration:false,contextIsolation:true,sandbox:true,webSecurity:true}});
+    window.once('ready-to-show',()=>{if(!process.env.SKILL_MANAGER_TEST && !shutdownPromise)window.show();});
     window.webContents.setWindowOpenHandler(()=>({action:'deny'}));
     window.webContents.on('will-navigate',(event,url)=>{if(!isTrustedRendererUrl(url,allowedUrl))event.preventDefault();});
     window.on('close',event=>{

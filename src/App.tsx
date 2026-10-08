@@ -60,10 +60,17 @@ export default function App() {
   const progressRef = useRef<Progress | null>(null);
   const onError = useCallback((value: unknown) => {setError(errorText(value));setLoginNeeded(requiresGitHubLogin(value));setRetryUntil(['RATE_LIMITED','AUTH_RATE_LIMITED'].includes((value as any)?.code) ? errorRetryAt(value) : 0);setRetryTask(null);}, []);
 
-  const load = useCallback(async () => {
-    const next = await call<Bootstrap>('bootstrap');
+  const closeDetail = useCallback(() => {
+    ++detailRequest.current;
+    setSelected(undefined);
+    setDetailLoading(false);
+  }, []);
+  const applySnapshot = useCallback((next: Bootstrap) => {
+    // 新索引取代旧详情请求，避免迟到响应覆盖扫描后的文件与安装状态。
+    ++detailRequest.current;
+    setDetailLoading(false);
     setData({...INITIAL,...next, skills:next.skills || [], roots:next.roots || [], operations:next.operations || [], adapters:next.adapters || [], sources:next.sources || []});
-    setSelected(previous => {if (!previous) return previous; const fresh = next.skills?.find(item => item.id === previous.id); return fresh ? {...previous,...fresh,sourceBinding:fresh.sourceBinding} : undefined;});
+    setSelected(previous => previous ? next.skills?.find(item => item.id === previous.id) : undefined);
     setSelection(previous => new Set([...previous].filter(id => next.skills?.some(item => item.id === id))));
     setLastRefresh(new Date());
     setOperationResult(previous => {
@@ -72,6 +79,9 @@ export default function App() {
       return pending ? {...pending,operation:pending,indexRefresh:pending.indexRefresh} : null;
     });
   }, []);
+  const load = useCallback(async () => {
+    applySnapshot(await call<Bootstrap>('bootstrap'));
+  }, [applySnapshot]);
   const refreshGitHub = useCallback(async () => {
     const github = await call<GitHubStatus>('github.status');
     setData(previous => ({...previous,github}));
@@ -96,11 +106,11 @@ export default function App() {
   const retrySeconds = Math.max(0,Math.ceil((retryUntil - now) / 1000));
   useEffect(() => {setError('');setRetryTask(null);setRetryUntil(0);setLoginNeeded(false);}, [page]);
   useEffect(() => {let alive = true; load().catch(value => {if(alive) onError(value);}).finally(() => {if(alive) setLoading(false);}); const off = subscribeProgress(value => {progressRef.current = value;setProgress(value);}); return () => {alive = false; off();};}, [load,onError]);
-  useEffect(() => {const listener = (event: KeyboardEvent) => {if((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {event.preventDefault(); searchRef.current?.focus(); searchRef.current?.select();} if(event.key === 'Escape' && !intent && !plan && !rootDialog) setSelected(undefined);}; window.addEventListener('keydown',listener); return () => window.removeEventListener('keydown',listener);}, [intent,plan,rootDialog]);
+  useEffect(() => {const listener = (event: KeyboardEvent) => {if((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {event.preventDefault(); searchRef.current?.focus(); searchRef.current?.select();} if(event.key === 'Escape' && !intent && !plan && !rootDialog) closeDetail();}; window.addEventListener('keydown',listener); return () => window.removeEventListener('keydown',listener);}, [intent,plan,rootDialog,closeDetail]);
   useEffect(() => {const media = window.matchMedia('(prefers-color-scheme: dark)'); const apply = () => {const theme = data.settings.theme || 'light'; document.documentElement.dataset.theme = theme === 'system' ? (media.matches ? 'dark' : 'light') : theme; document.documentElement.style.fontSize = `${data.settings.fontSize || 14}px`;}; apply();media.addEventListener('change',apply);return () => media.removeEventListener('change',apply);}, [data.settings.theme,data.settings.fontSize]);
   useEffect(() => {setListPage(1);}, [query,tool,scope,tag,state,favorites]);
   useEffect(() => {if(!toast) return; const timer = setTimeout(() => setToast(''),4500); return () => clearTimeout(timer);}, [toast]);
-  const scan = () => run('正在扫描已登记的技能目录', async () => {const result = await call<Bootstrap>('scan'); setData({...INITIAL,...result}); setLastRefresh(new Date()); setToast(`扫描完成，共识别 ${result.skills?.length || 0} 个技能包`);}, {cancellable:true});
+  const scan = () => run('正在扫描已登记的技能目录', async () => {const result = await call<Bootstrap>('scan'); applySnapshot(result); setToast(`扫描完成，共识别 ${result.skills?.length || 0} 个技能包`);}, {cancellable:true});
   const selectSkill = useCallback(async (skill: Skill) => {
     setSelected(skill); setDetailLoading(true); const request = ++detailRequest.current;
     try {const detail = await call<Skill>('skills.detail',{id:skill.id}); if(request === detailRequest.current) {setSelected(detail);setData(previous => ({...previous,skills:previous.skills.map(item => item.id === detail.id ? {...item,...detail} : item)}));}}
@@ -210,7 +220,7 @@ export default function App() {
             </section><div className="list-bottom-note"><ShieldCheck size={13}/>只读扫描不会移动、修改或删除你的技能文件。</div>
           </> : page === 'discover' ? <Discovery {...pageProps}/> : page === 'duplicates' ? <Duplicates {...pageProps}/> : page === 'updates' ? <Updates {...pageProps}/> : page === 'history' ? <HistoryPage {...pageProps}/> : <SettingsPage {...pageProps}/>}
         </main>
-        {(listMode || (page === 'duplicates' && selected)) && <Detail skill={selected} loading={detailLoading} busy={busy} onClose={() => {++detailRequest.current;setSelected(undefined);setDetailLoading(false);}} onError={onError} onOrganize={organize} onIntent={setIntent} run={run} onReload={load} onLogin={() => setPage('settings')}/>}
+        {(listMode || (page === 'duplicates' && selected)) && <Detail skill={selected} loading={detailLoading} busy={busy} onClose={closeDetail} onError={onError} onOrganize={organize} onIntent={setIntent} run={run} onReload={load} onLogin={() => setPage('settings')}/>}
       </div>
       <footer className={`taskbar ${busy ? 'working' : ''}`} role="status"><div>{busy ? <Loader2 size={13} className="spin"/> : error ? <AlertCircle size={13}/> : <Check size={13}/>}<span>{busy ? progress?.message || busyLabel : error ? '最近一次操作未完成，请查看上方提示' : '就绪'}</span>{busy && progress?.total ? <span>{progress.current || 0} / {progress.total}</span> : null}</div>{cancellableKind && <button className="task-cancel" disabled={cancelling} onClick={cancelTask}>{cancelling ? '正在取消…' : '取消查询'}</button>}{busy && progress?.total ? <progress max={progress.total} value={progress.current || 0}/> : <span>{data.roots.length} 个扫描目录{lastRefresh ? ` · 索引读取于 ${lastRefresh.toLocaleTimeString('zh-CN',{hour12:false})}` : ''}</span>}</footer>
     </div>

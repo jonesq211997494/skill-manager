@@ -1,12 +1,18 @@
 # Skillspace · 中文技能管理器
 
-版本：0.2.1 可靠性补丁（源码候选，尚未发布正式 Release）。用于管理 Codex、Claude Code 和 Cursor 技能的 Windows 中文桌面应用。源码、使用说明和测试脚本保存在本仓库。
+版本：0.2.2 桌面交付版（开发预览，尚未发布 GitHub Release）。用于管理 Codex、Claude Code 和 Cursor 技能的 Windows 中文桌面应用。源码、使用说明和测试脚本保存在本仓库。
 
 ## 启动
 
-已发布的基线版本可从 [v0.2.0 Release](https://github.com/jonesq211997494/skill-manager/releases/tag/v0.2.0) 下载便携版或 Windows 安装程序，无需 Node.js、Rust 或 WebView2。构建产物未进行商业代码签名。
+本地构建后的 `release/` 提供 Windows x64 桌面程序，无需另外安装 Node.js、Rust 或 WebView2：
 
-当前仓库为私有仓库，下载时需要登录有权限的 GitHub 账号。源码仓库不包含安装包，安装包及校验值作为 Release 附件提供。
+- `Skill-Manager-0.2.2-setup-x64.exe`：安装版，支持简体中文、选择安装目录、桌面快捷方式及卸载入口。
+- `Skill-Manager-0.2.2-portable.exe`：免安装版，双击运行；应用数据仍保存在 `%APPDATA%/SkillManagerDesktop`，不随 EXE 移动。
+- `SHA256SUMS-0.2.2.txt`：两个成品的 SHA-256 校验值。
+
+升级前关闭旧窗口，新版沿用同一应用数据目录。构建产物未签名；安装器的干净系统安装、卸载与跨版本升级仍需单独验收。
+
+源码仓库不包含安装包。历史基线见 [v0.2.0 Release](https://github.com/jonesq211997494/skill-manager/releases/tag/v0.2.0)，私有仓库下载需要有权限的 GitHub 账号。本轮交付保存在本地，未上传 Release。
 
 源码运行可双击 `启动软件.cmd`，或在此目录执行：
 
@@ -40,7 +46,17 @@ npm start
 - 安装基线与不可变内容快照、三方文件差异、选择更新、后续修改保护、幂等执行、持久化日志和中断恢复。
 - SQLite 一致事务读取旧数据库（包含 WAL），历史清单预览/导入，路径匹配、重复导入幂等和过期会话证据。
 
-## 本轮完善（0.2.1）
+## 本轮完善（0.2.2）
+
+- 更新、移除父技能目录时，同时保护其中的系统或插件只读子目录；执行前再次检查新增的只读归属。
+- 按 Escape 关闭详情后，迟到的内容或错误不会重新打开面板；重新扫描同步更新详情和批量选择，防止旧数据覆盖新索引。
+- 窗口完成首次绘制后显示；重复打开时恢复已最小化的主窗口。源码启动失败会返回非零退出码。
+- 提供 Windows 安装版与便携版，构建后自动生成校验值；打包验证检查全部第一方代码及构建后的 JS/CSS，而非仅检查 HTML 入口。
+- 桌面与成品冒烟使用独立数据目录，CI 增加界面状态、成品启动与校验检查；构建命令显式禁止自动发布。
+
+审查依据、验证结果及后续范围见 [0.2.2 改进与交付记录](docs/改进记录-0.2.2.md)。
+
+## 上轮完善（0.2.1）
 
 - 文件操作与索引刷新分别报告。文件已完成而扫描失败时保留操作编号，可“仅刷新索引”或查看操作，不要求重复执行文件变更。
 - 正常关闭窗口会等待已确认操作和必要的管理数据回写，再关闭 SQLite；异常中断恢复继续保留。
@@ -133,15 +149,18 @@ GitHub 仍可能对已登录账号限流；登录不代表无限请求。配额�
 npm test                 # 临时目录中的核心与集成测试
 npm run build            # TypeScript 检查与前端构建
 npm run test:desktop     # Electron 隐藏窗口与三个尺寸截图
+npm run test:ui-state    # 迟到请求、详情刷新和批量选择回归
 node scripts/ui-flow.mjs # 桌面交互闭环
 node scripts/github-ui-smoke.mjs # 隔离认证、加密保存、缓存与限流UI测试
 node scripts/benchmark.mjs
 npm run package          # Windows 便携版与 NSIS 安装程序
+npm run test:package     # 成品启动、包内文件一致性与 SHA-256 校验
+npm run package:verified # 测试、构建、打包和成品验证的完整流程
 ```
 
 `test-results/` 保存实际执行结果；`.runtime/` 是验证数据。这些目录仅在本机生成，不纳入 Git。测试不改动用户现有技能和工具配置。
 
-提交到 `main` 或创建 Pull Request 时，GitHub Actions 会在 Windows 环境运行核心测试和界面构建。Release 的发布说明位于 `docs/releases/`。
+提交到 `main` 或创建 Pull Request 时，GitHub Actions 会在 Windows 环境运行核心、桌面及界面回归，构建安装器与便携版，并验证成品。工作流不自动发布或上传附件。Release 的发布说明位于 `docs/releases/`。
 
 ## 代码结构
 
