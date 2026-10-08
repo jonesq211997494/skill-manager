@@ -14,11 +14,14 @@ await fs.mkdir(path.join(root,'test-results'),{recursive:true});
 const runtime=await fs.mkdtemp(path.join(root,'.runtime','portable-smoke-'));
 const home=path.join(runtime,'home');
 await fs.mkdir(home,{recursive:true});
+// 显式覆盖 Windows 短路径中的 ~ 编码场景，避免仅在云端用户名较长时才能发现回归。
+const extractionTemp=path.join(runtime,'extract~temporary');
+await fs.mkdir(extractionTemp,{recursive:true});
 const server=net.createServer();
 await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
 const port=server.address().port;
 await new Promise(resolve=>server.close(resolve));
-const env={...process.env,SKILL_MANAGER_TEST:'1',SKILL_MANAGER_DATA_DIR:path.join(runtime,'data'),SKILL_MANAGER_HOME:home,CODEX_HOME:path.join(home,'.codex'),CLAUDE_CONFIG_DIR:path.join(home,'.claude')};
+const env={...process.env,TEMP:extractionTemp,TMP:extractionTemp,SKILL_MANAGER_TEST:'1',SKILL_MANAGER_DATA_DIR:path.join(runtime,'data'),SKILL_MANAGER_HOME:home,CODEX_HOME:path.join(home,'.codex'),CLAUDE_CONFIG_DIR:path.join(home,'.claude')};
 delete env.ELECTRON_RUN_AS_NODE;delete env.SKILL_MANAGER_DEV_URL;
 const child=spawn(path.join(root,'release',artifactName),[`--remote-debugging-port=${port}`],{env,windowsHide:true,stdio:'ignore'});
 let launchError;

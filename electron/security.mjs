@@ -11,11 +11,20 @@ export function rendererCsp(development = false) {
     "base-uri 'none'", "form-action 'none'",
   ].join('; ') + ';';
 }
+function normalizeUnreservedPath(pathname) {
+  // Windows 8.3 路径含 ~；Node 的 file URL 会编码为 %7E，Chromium 保留原字符。
+  // 仅还原 URI 非保留字符，不解码分隔符、百分号或二次编码，保持路径边界。
+  return pathname.replace(/%([\da-f]{2})/gi, (encoded, hex) => {
+    const character = String.fromCharCode(Number.parseInt(hex, 16));
+    return /^[A-Za-z0-9._~-]$/.test(character) ? character : encoded;
+  });
+}
 export function isTrustedRendererUrl(value, entry) {
   try {
     const candidate = new URL(value), allowed = new URL(entry);
     return !candidate.username && !candidate.password
       && candidate.protocol === allowed.protocol && candidate.host === allowed.host
-      && candidate.pathname === allowed.pathname && candidate.search === allowed.search;
+      && normalizeUnreservedPath(candidate.pathname) === normalizeUnreservedPath(allowed.pathname)
+      && candidate.search === allowed.search;
   } catch { return false; }
 }

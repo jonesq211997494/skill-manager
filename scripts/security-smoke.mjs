@@ -36,7 +36,7 @@ const requests=[], errors=[];
 const report={status:'running',checkedAt:new Date().toISOString(),steps:[]};
 try {
   instance=await electron.launch({args:[path.join(root,'electron/main.mjs')],env,timeout:60000});
-  page=await instance.firstWindow();
+  page=await instance.firstWindow({timeout:60000});
   page.on('pageerror',error=>errors.push(error.message));
   await page.route('https://example.invalid/**',route=>{requests.push(route.request().url());return route.abort();});
   await page.getByRole('heading',{name:'我的技能',exact:true}).waitFor();
@@ -77,6 +77,12 @@ try {
   console.log('生产渲染安全与受控退出冒烟通过。');
 } catch(error) {
   report.status='failed';report.error=error.message;process.exitCode=1;
+  if(instance) {
+    try {
+      report.windowState=await instance.evaluate(({app,BrowserWindow})=>({ready:app.isReady(),windows:BrowserWindow.getAllWindows().map(window=>({destroyed:window.isDestroyed(),url:window.webContents.getURL(),loading:window.webContents.isLoading()}))}));
+      console.error('失败时的桌面窗口状态：',JSON.stringify(report.windowState));
+    } catch { /* 主进程已退出时保留原始失败，不覆盖它。 */ }
+  }
   console.error(error);
 } finally {
   if(instance)await instance.close();

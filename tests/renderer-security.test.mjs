@@ -28,3 +28,22 @@ test('生产 CSP 禁止远端连接、脚本例外及嵌入资源', () => {
   assert.match(dev, /ws:\/\/127\.0\.0\.1:5173/);
   assert.doesNotMatch(dev, /unsafe-eval/);
 });
+
+test('Windows 短路径的波浪号允许 Node 与 Chromium 的等价 URL 编码', () => {
+  const entry = 'file:///C:/Users/RUNNER%7E1/AppData/Local/Temp/app/resources/app.asar/dist/index.html';
+  const chromium = entry.replace('%7E', '~');
+  assert.equal(isTrustedRendererUrl(chromium, entry), true);
+  assert.equal(isTrustedRendererUrl(entry, chromium), true);
+  assert.equal(isTrustedRendererUrl(entry.replace('%7E', '%7e'), chromium), true);
+  assert.equal(isTrustedRendererUrl(`${chromium}#history`, entry), true);
+  assert.equal(isTrustedRendererUrl(chromium.replace('index.html', '%69ndex.html'), entry), true);
+  for (const candidate of [
+    chromium.replace('RUNNER~1', 'RUNNER~2'),
+    chromium.replace('RUNNER~1', 'RUNNER%257E1'),
+    chromium.replace('/dist/index.html', '/dist%2Findex.html'),
+    chromium.replace('/dist/index.html', '/dist%5Cindex.html'),
+    chromium.replace('/dist/index.html', '/dist/%2e%2e/other.html'),
+    chromium.replace('file:///C:', 'file://remote/C:'),
+    `${chromium}?next=evil`, `${chromium}.evil`,
+  ]) assert.equal(isTrustedRendererUrl(candidate, entry), false, candidate);
+});
