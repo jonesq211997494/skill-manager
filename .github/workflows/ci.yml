@@ -42,18 +42,23 @@ jobs:
       - name: Detail and scan state regression
         run: npm run test:ui-state
       - name: Build Windows installer and portable app
+        id: build_windows
         run: npm run package
       - name: Verify packaged app and checksums
         run: npm run test:package
       - name: Packaged window lifecycle and 150 percent rendering
+        if: ${{ !cancelled() && steps.build_windows.outcome == 'success' }}
         run: node scripts/desktop-lifecycle-smoke.mjs
       - name: Download released installer for upgrade verification
+        id: baseline
+        if: ${{ !cancelled() && steps.build_windows.outcome == 'success' }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release download v0.2.0 --repo "$env:GITHUB_REPOSITORY" --pattern 'Skill-Manager-0.2.0-setup-x64.exe' --pattern 'SHA256SUMS-0.2.0.txt' --dir .runtime/installer-baseline
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Clean Windows install, upgrade and uninstall
+        if: ${{ !cancelled() && steps.build_windows.outcome == 'success' && steps.baseline.outcome == 'success' }}
         run: ./scripts/installer-lifecycle.ps1 -PreviousInstaller .runtime/installer-baseline/Skill-Manager-0.2.0-setup-x64.exe -CurrentInstaller release/Skill-Manager-0.2.2-setup-x64.exe
       - name: Sanitize local evidence and record environment
         if: always()

@@ -39,6 +39,8 @@ try {
   await page.getByRole('heading',{name:'我的技能',exact:true}).waitFor();
   await page.getByText(`v${pkg.version}`,{exact:true}).waitFor();
   const data=await page.evaluate(()=>window.manager.call('bootstrap'));
+  if(data?.ok===false)throw new Error(`便携程序服务调用失败：${JSON.stringify(data.error)}；页面：${page.url()}`);
+  if(!Array.isArray(data?.skills))throw new Error(`便携程序返回无效索引：${JSON.stringify(data)}`);
   if(data.skills.length!==0)throw new Error('便携测试未使用隔离的空环境。');
   await fs.writeFile(path.join(root,'test-results','portable-smoke.json'),JSON.stringify({status:'passed',checkedAt:new Date().toISOString(),executable:artifactName,skills:data.skills.length},null,2));
   console.log('最终便携 EXE 解包、启动和服务连接通过。');
