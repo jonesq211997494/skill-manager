@@ -1,10 +1,14 @@
 # Skillspace · 中文技能管理器
 
-版本：0.2.2 桌面交付版（开发预览，尚未发布 GitHub Release）。用于管理 Codex、Claude Code 和 Cursor 技能的 Windows 中文桌面应用。源码、使用说明和测试脚本保存在本仓库。
+版本：0.2.2 桌面交付版（开发预览）。用于管理 Codex、Claude Code 和 Cursor 技能的 Windows 中文桌面应用。源码、使用说明和测试脚本保存在本仓库。
 
 ## 启动
 
-本地构建后的 `release/` 提供 Windows x64 桌面程序，无需另外安装 Node.js、Rust 或 WebView2：
+从 [v0.2.2 Release](https://github.com/jonesq211997494/skill-manager/releases/tag/v0.2.2) 下载 Windows x64 桌面程序，无需另外安装 Node.js、Rust 或 WebView2：
+
+[![下载 Windows 安装版](https://img.shields.io/badge/Windows-%E4%B8%8B%E8%BD%BD%E5%AE%89%E8%A3%85%E7%89%88-0078D4?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/jonesq211997494/skill-manager/releases/download/v0.2.2/Skill-Manager-0.2.2-setup-x64.exe)
+
+点击上面的按钮会直接下载 Windows x64 安装程序；下载完成后双击该 `.exe`，按安装向导完成安装即可使用。该预览版尚未代码签名，Windows 可能显示 SmartScreen 或“未知发布者”提示；继续前请确认下载来源是本仓库的 GitHub Release。
 
 - `Skill-Manager-0.2.2-setup-x64.exe`：安装版，支持简体中文、选择安装目录、桌面快捷方式及卸载入口。
 - `Skill-Manager-0.2.2-portable.exe`：免安装版，双击运行；应用数据仍保存在 `%APPDATA%/SkillManagerDesktop`，不随 EXE 移动。
@@ -12,7 +16,7 @@
 
 升级前关闭旧窗口，新版沿用同一应用数据目录。构建产物未签名；CI 在全新的托管 Windows 环境验证静默安装、v0.2.0 升级及卸载保留数据，实际结果见 [Windows checks](https://github.com/jonesq211997494/skill-manager/actions/workflows/ci.yml)。交互式安装向导和多显示器 DPI 切换仍需单独验收。
 
-源码仓库不包含安装包。历史基线见 [v0.2.0 Release](https://github.com/jonesq211997494/skill-manager/releases/tag/v0.2.0)，私有仓库下载需要有权限的 GitHub 账号。本轮交付保存在本地，未上传 Release。
+源码仓库不包含安装包，安装版、便携版及校验文件作为 Release 附件提供。私有仓库下载需要有权限的 GitHub 账号；本地构建产物仍位于 `release/`。
 
 源码运行可双击 `启动软件.cmd`，或在此目录执行：
 
@@ -161,7 +165,7 @@ npm run package:verified # 测试、构建、打包和成品验证的完整流�
 
 `test-results/` 保存实际执行结果；`.runtime/` 是验证数据。这些目录仅在本机生成，不纳入 Git。测试不改动用户现有技能和工具配置。
 
-提交到 `main` 或创建 Pull Request 时，GitHub Actions 会在 Windows 环境运行核心、桌面及界面回归，构建安装器与便携版，并验证成品。工作流不自动发布或上传附件。Release 的发布说明位于 `docs/releases/`。
+提交到 `main` 或创建 Pull Request 时，GitHub Actions 会在 Windows 环境运行核心、桌面及界面回归，构建安装器与便携版，并验证成品。推送与 `package.json` 版本相同的标签（例如 `v0.2.3`）时，`Publish Windows app` 工作流会在验证通过后创建 GitHub Release，并上传安装版、便携版与 SHA-256 校验文件。Release 的发布说明位于 `docs/releases/`。
 
 ## 代码结构
 
