@@ -66,6 +66,7 @@ jobs:
           gh release view "$env:RELEASE_TAG" --repo "$env:GITHUB_REPOSITORY" 2>$null
           if ($LASTEXITCODE -eq 0) {
             gh release upload "$env:RELEASE_TAG" $assets --clobber --repo "$env:GITHUB_REPOSITORY"
+            gh release edit "$env:RELEASE_TAG" --repo "$env:GITHUB_REPOSITORY" --draft=false --title "Skill Manager $env:VERSION" --notes-file "docs/releases/$env:RELEASE_TAG.md"
           } else {
             gh release create "$env:RELEASE_TAG" $assets --repo "$env:GITHUB_REPOSITORY" --title "Skill Manager $env:VERSION" --notes-file "docs/releases/$env:RELEASE_TAG.md"
           }
